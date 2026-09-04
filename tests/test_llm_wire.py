@@ -230,3 +230,66 @@ class TestToolsExposure(unittest.TestCase):
         a = asyncio.run(llm.assess("Создай папку", "", None))
         self.assertFalse(a.achieved)
         self.assertEqual(a.progress, 0)
+
+    def test_is_context_overflow_error(self):
+        from agent.llm.openai_client import (LLMError, is_context_overflow_error)
+        cases = [
+            "HTTP 400: llama runner process has terminated: context length exceeded",
+            "HTTP 400: maximum context length is 32768 tokens, but prompt has 41000",
+            "HTTP 413: request too large: prompt is too long",
+            "HTTP 400: ctx_len exceeded. n_past=8000",
+        ]
+        for c in cases:
+            self.assertTrue(is_context_overflow_error(LLMError(c)), c)
+        for c in ["HTTP 500: internal error",
+                  "HTTP 400: bad tool name 'fs_mkdir'",
+                  "HTTP 401: unauthorized"]:
+            self.assertFalse(is_context_overflow_error(LLMError(c)), c)
+
+    def test_context_overflow_retries_with_progressive_compaction(self):
+        """«Контекст переполнен» → запрос повторяется с ужатым контекстом
+        по чуть-чуть, пока не влезет (баг: агент падал с ошибкой вместо того,
+        чтобы освободить место)."""
+        from agent.llm.openai_client import LLMError
+        llm = make_llm()
+        calls = []
+
+        def fake_post(payload):
+            calls.append(payload)
+            if len(calls) == 1:
+                raise LLMError("HTTP 400: context length exceeded (max 8192)")
+            return {"choices": [{"message": {"role": "assistant",
+                                             "content": "ок"}}]}
+
+        llm._post = fake_post
+        msgs = [{"role": "system", "content": "sys"}] + \
+               [{"role": "user", "content": f"m{i}"} for i in range(60)]
+        choice = llm._chat(msgs)
+        self.assertEqual(choice.get("content"), "ок")
+        # была ровно одна перезапись с более жёстким сжатием
+        self.assertEqual(len(calls), 2)
+        self.assertLessEqual(len(calls[1]["messages"]),
+                             llm.P_HISTORY[1] + 1)
+
+    def test_context_overflow_retries_until_fits(self):
+        """Ужатие продолжается до упора: даже на 9-м уровне давления клиент
+        не сдаётся без попытки, а сообщения истории становятся короче."""
+        from agent.llm.openai_client import LLMError
+        llm = make_llm()
+        calls = []
+
+        def fake_post(payload):
+            calls.append(payload)
+            raise LLMError("HTTP 400: context length exceeded")
+
+        llm._post = fake_post
+        msgs = [{"role": "system", "content": "s" * 30000}] + \
+               [{"role": "user", "content": f"m{i}"} for i in range(60)]
+        with self.assertRaises(LLMError):
+            llm._chat(msgs)
+        # пробовали несколько уровней давления (не только первый)
+        self.assertGreater(len(calls), 2)
+        # история на последней попытке заметно короче исходной
+        last_n = len(calls[-1]["messages"])
+        self.assertLess(last_n, len(msgs))
+        self.assertLessEqual(last_n, llm.P_HISTORY[0] + 1)

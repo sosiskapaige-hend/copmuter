@@ -28,6 +28,11 @@
   GET  /api/journal           — журнал действий (undo)
   GET  /api/system            — CPU/RAM/диск
   POST /api/stt               — серверный STT (Whisper, опционально)
+  GET  /api/selfcheck         — возможности агента (мышь/экран/окна/голос)
+  POST /api/selfcheck/run     — самопроверка с реальными тестами
+  POST /api/voice/settings    — обновить настройки голоса
+  POST /api/voice/global      — restart|stop глобального голоса
+  POST /api/voice/send        — голосовая команда (текст) в чат/агента
 """
 from __future__ import annotations
 
@@ -162,6 +167,9 @@ class WebUI:
                     return
                 if p == "/api/voice":
                     self._json(rt.voice_support())
+                    return
+                if p == "/api/selfcheck":
+                    self._json(rt.self_check(run_tests=False))
                     return
                 if p == "/api/settings":
                     self._json(rt.settings_view())
@@ -300,18 +308,50 @@ class WebUI:
                     self._json(rt.settings_apply(b))
                     return
                 if p == "/api/stt":
-                    seconds = max(2, min(int(b.get("seconds", 8)), 30))
+                    seconds = max(2, min(int(b.get("seconds", 20)), 40))
                     from ...voice import Voice
                     v = Voice(rt.cfg)
                     if not v.stt_available():
-                        self._json({"ok": False, "error": "локальный STT не установлен: "
-                                                          "pip install faster-whisper sounddevice"}, 503)
+                        self._json({"ok": False,
+                                    "error": "локальный STT не установлен: "
+                                             "pip install faster-whisper sounddevice numpy"}, 503)
                         return
                     try:
+                        # VAD-запись: стартует со звуком, кончается по тишине
                         text = v.record_and_transcribe(seconds)
-                        self._json({"ok": True, "text": text})
+                        self._json({"ok": True, "text": text,
+                                    "engine": "whisper"})
                     except Exception as e:  # noqa: BLE001
                         self._json({"ok": False, "error": str(e)}, 503)
+                    return
+                if p == "/api/voice/settings":
+                    self._json(rt.voice_settings_apply(b))
+                    return
+                if p == "/api/voice/global":
+                    action = str(b.get("action") or "")
+                    if action == "restart":
+                        ok = rt.start_global_voice()
+                        self._json({"ok": ok, "status": rt.voice_support()})
+                    elif action == "stop":
+                        rt.stop_global_voice()
+                        self._json({"ok": True, "status": rt.voice_support()})
+                    else:
+                        self._json({"ok": True, "status": rt.voice_support()})
+                    return
+                if p == "/api/selfcheck/run":
+                    self._json(rt.self_check(run_tests=True))
+                    return
+                if p == "/api/voice/send":
+                    # Голосовая команда: текст -> чат/агент как будто набрали руками
+                    text = str(b.get("text") or "").strip()
+                    if not text:
+                        self._json({"ok": False, "error": "пустая команда"}, 400)
+                        return
+                    agent = bool(b.get("agent"))
+                    mode = str(b.get("mode") or rt.cfg.safety.mode)
+                    r = rt.chats.send(b.get("chat_id") or None, text,
+                                      attachments=None, agent=agent, mode=mode)
+                    self._json(r, 200 if r.get("ok") else 400)
                     return
                 self._json({"error": "not found"}, 404)
 
@@ -430,6 +470,9 @@ def serve(rt: AgentRuntime, host: str | None = None, port: int | None = None,
     ui.start()
     url = f"http://{ui.host}:{ui.port}"
     rt.bus.emit("log", level="info", message=f"Web UI: {url}")
+    # Глобальный голос: хоткеи работают, даже когда окно приложения свёрнуто
+    # или пользователь в другой программе (если библиотеки доступны).
+    rt.start_global_voice()
     if open_browser:
         try:
             import webbrowser

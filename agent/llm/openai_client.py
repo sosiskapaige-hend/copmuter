@@ -19,6 +19,27 @@ class LLMError(RuntimeError):
     pass
 
 
+def is_context_overflow_error(e: Exception) -> bool:
+    """Похоже ли сообщение об ошибке на переполнение контекста модели.
+
+    Разные серверы пишут по-разному: «context length exceeded» (LM Studio /
+    llama.cpp), «maximum context length is N tokens» (OpenAI), «prompt is too
+    long», «ctx_len», «too many tokens», «reduce the length» (Ollama) и т.п.
+    """
+    msg = str(e)
+    low = msg.lower()
+    if not any(f"http {code}" in low for code in (400, 413, 429, 500, 503)):
+        return False
+    if "context" in low or "ctx" in low:
+        return True
+    return any(k in low for k in (
+        "token", "too long", "too many", "prompt is too", "maximum length",
+        "max length", "max_model_len", "kv cache", "window is too small",
+        "reduce the length", "exceeds", "exceeded", "larger than",
+        "longer than", "cannot fit", "doesn't fit", "не помещается",
+    ))
+
+
 class OpenAICompatibleLLM:
     name = "openai-compatible"
 
@@ -34,6 +55,19 @@ class OpenAICompatibleLLM:
     USER_LIMIT = 6000                # пользовательские/служебные сообщения
     TOOL_LIMIT = 3000                # наблюдения инструментов
     TOOL_DESC_LIMIT = 400            # описание инструмента в schema
+
+    # Уровни сжатия при переполнении контекста. На каждом уровне «давления»
+    # контекст ужимается по чуть-чуть: сначала уходят старые сообщения истории,
+    # потом укорачиваются поля, потом сокращается число схем инструментов.
+    # Уровень 0 = обычные лимиты (см. выше), дальше — всё скромнее, поэтому
+    # модель ВСЕГДА сможет ответить, а не падает с «контекст переполнен».
+    PRESSURE_LEVELS = 9
+    P_HISTORY = (40, 32, 26, 20, 14, 10, 7, 5, 3)
+    P_SYSTEM = (16000, 14000, 12000, 10000, 8000, 6500, 5000, 4000, 3200)
+    P_USER = (6000, 5000, 4000, 3200, 2600, 2000, 1600, 1300, 1000)
+    P_TOOL = (3000, 2600, 2200, 1800, 1400, 1100, 900, 700, 550)
+    P_TOOLS_NUM = (128, 128, 112, 96, 84, 72, 60, 50, 40)
+    P_DESC = (400, 360, 320, 280, 240, 200, 170, 150, 130)
 
     def __init__(self, base_url: str, api_key: str, model: str,
                  max_tokens: int = 4096, temperature: float = 0.2,
@@ -123,21 +157,28 @@ class OpenAICompatibleLLM:
             return value
         return value[:limit].rstrip() + "... [обрезано]"
 
-    def _compact_messages(self, messages: list[dict]) -> list[dict]:
+    @staticmethod
+    def _pressure(table: tuple, retry: int):
+        i = max(0, min(int(retry), len(table) - 1))
+        return table[i]
+
+    def _compact_messages(self, messages: list[dict], retry: int = 0) -> list[dict]:
         """Готовит messages для отправки.
 
         Раньше брались ПЕРВЫЕ 20 сообщений (`messages[:20]`) — при длинной
         истории модель не видела последние наблюдения инструментов и
         «зацикливалась». Теперь: system-сообщения сохраняются всегда,
-        а из остальных берётся хвост (последние N).
+        а из остальных берётся хвост (последние N). При переполнении
+        контекста (`retry` > 0) история и лимиты постепенно ужимаются.
         """
         system = [m for m in messages if (m.get("role") or "user") == "system"]
         rest = [m for m in messages if (m.get("role") or "user") != "system"]
-        if len(rest) > self.MAX_HISTORY_MESSAGES:
-            rest = rest[-self.MAX_HISTORY_MESSAGES:]
-        return [self._wire_message(m) for m in system + rest]
+        keep = self._pressure(self.P_HISTORY, retry)
+        if len(rest) > keep:
+            rest = rest[-keep:]
+        return [self._wire_message(m, retry) for m in system + rest]
 
-    def _wire_message(self, msg: dict) -> dict:
+    def _wire_message(self, msg: dict, retry: int = 0) -> dict:
         """Приводит сообщение к валидной для chat/completions форме.
 
         OpenAI-совместимые серверы (OpenAI, LM Studio, Ollama, Groq, ...)
@@ -163,16 +204,18 @@ class OpenAICompatibleLLM:
             status = "OK" if msg.get("ok", True) else "ОШИБКА"
             out["role"] = "user"
             out["content"] = (f"[РЕЗУЛЬТАТ ИНСТРУМЕНТА {tool_name} — {status}]\n"
-                              + self._trim_text(text, self.TOOL_LIMIT))
+                              + self._trim_text(text, self._pressure(self.P_TOOL, retry)))
         else:
             content = msg.get("content")
-            limit = self.SYSTEM_LIMIT if role == "system" else self.USER_LIMIT
+            table = self.P_SYSTEM if role == "system" else self.P_USER
+            limit = self._pressure(table, retry)
             if isinstance(content, str):
                 out["content"] = self._trim_text(content, limit)
             elif content is None:
                 out["content"] = ""
             else:
-                out["content"] = content   # мультимодальный content (список частей)
+                # мультимодальный content (список частей) — режем текстовые куски
+                out["content"] = self._trim_parts(content, limit)
 
         if role == "assistant":
             tc = msg.get("tool_calls")
@@ -181,32 +224,59 @@ class OpenAICompatibleLLM:
 
         return out
 
-    def _compact_tools(self, tools: list[dict] | None) -> list[dict] | None:
+    @classmethod
+    def _trim_parts(cls, parts, limit: int):
+        """Ужимает текстовые части мультимодального content."""
+        if not isinstance(parts, list):
+            return parts
+        out = []
+        for part in parts:
+            if isinstance(part, dict) and part.get("type") == "text":
+                p = dict(part)
+                p["text"] = cls._trim_text(str(p.get("text", "")), limit)
+                out.append(p)
+            else:
+                out.append(part)
+        return out
+
+    def _compact_tools(self, tools: list[dict] | None, retry: int = 0) -> list[dict] | None:
         """Схемы инструментов для function calling.
 
         Раньше отправлялись только ПЕРВЫЕ 8 инструментов из отсортированного
         по алфавиту списка (ask_user + browser_*): модель физически не могла
         вызвать fs_mkdir, terminal_run, launch_app или finish_task — и просто
         писала текст «готово». Теперь уходят все инструменты, а сокращаются
-        только слишком длинные описания.
+        только слишком длинные описания. Схемы отсортированы по релевантности
+        (ядро в начале), поэтому при сильном сжатии отбрасываются наименее
+        нужные для текущей задачи, а не алфавитные первые.
         """
         if not tools or not self.supports_tool_calling:
             return tools
+        num = self._pressure(self.P_TOOLS_NUM, retry)
+        desc_limit = self._pressure(self.P_DESC, retry)
         compact: list[dict] = []
-        for tool in tools[:self.MAX_TOOLS]:
+        for tool in tools[:num]:
             schema = dict(tool)
             fn = dict(schema.get("function") or {})
             desc = fn.get("description")
             if isinstance(desc, str):
-                fn["description"] = self._trim_text(desc, self.TOOL_DESC_LIMIT)
+                fn["description"] = self._trim_text(desc, desc_limit)
             schema["function"] = fn
             compact.append(schema)
         return compact
 
     def _chat(self, messages: list[dict], tools: list[dict] | None = None,
-              temperature: float | None = None, json_mode: bool = False) -> dict:
-        compact_messages = self._compact_messages(messages)
-        compact_tools = self._compact_tools(tools)
+              temperature: float | None = None, json_mode: bool = False,
+              _retry: int = 0) -> dict:
+        """Один вызов chat/completions с адаптивным сжатием контекста.
+
+        Если сервер ответил «контекст переполнен» — запрос повторяется с
+        чуть более ужатым контекстом (старее сообщения истории, короче поля,
+        меньше схем инструментов) до тех пор, пока не влезет. Поэтому агент
+        больше НЕ падает с ошибкой про контекст, а сам освобождает место.
+        """
+        compact_messages = self._compact_messages(messages, _retry)
+        compact_tools = self._compact_tools(tools, _retry)
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": compact_messages,
@@ -224,6 +294,10 @@ class OpenAICompatibleLLM:
         try:
             data = self._post(payload)
         except LLMError as e:
+            # КОНТЕКСТ ПЕРЕПОЛНЕН → ужимаем и пробуем ещё (по чуть-чуть)
+            if is_context_overflow_error(e) and _retry < len(self.P_HISTORY) - 1:
+                return self._chat(messages, tools, temperature=temperature,
+                                  json_mode=json_mode, _retry=_retry + 1)
             # Некоторые серверы (старые Ollama, llama.cpp, некоторые прокси)
             # отвечают 400 на response_format/tools. Повторяем без них, чтобы
             # агент не останавливался — парсер JSON/текстовых вызовов справится.
@@ -239,7 +313,14 @@ class OpenAICompatibleLLM:
                 retry = True
             if not retry:
                 raise
-            data = self._post(payload)
+            try:
+                data = self._post(payload)
+            except LLMError as e2:
+                # и сжатый контекст всё ещё не влезает? ещё одно ужатие
+                if is_context_overflow_error(e2) and _retry < len(self.P_HISTORY) - 1:
+                    return self._chat(messages, tools, temperature=temperature,
+                                      json_mode=False, _retry=_retry + 1)
+                raise
         try:
             choice = data["choices"][0]["message"]
         except (KeyError, IndexError, TypeError) as e:
@@ -541,10 +622,32 @@ class OpenAICompatibleLLM:
     # ---------------- чат: стриминг и диагностика ----------------
     def chat_stream(self, messages: list[dict], temperature: float | None = None):
         """Потоковая генерация. Отдаёт (kind, piece), где kind — "content" или
-        "think" (содержимое <think>…</think> и reasoning_content)."""
+        "think" (содержимое <think>…</think> и reasoning_content).
+
+        При ошибке «контекст переполнен» стрим автоматически повторяется с
+        ужатым контекстом (по чуть-чуть), пока запрос не влезет.
+        """
+        retry = 0
+        sent_any = False
+        while True:
+            try:
+                for kind, piece in self._stream_attempt(messages, temperature, retry):
+                    sent_any = True
+                    yield kind, piece
+                return
+            except LLMError as e:
+                # повторяем только если сервер ещё ничего не успел отдать
+                if (is_context_overflow_error(e) and not sent_any
+                        and retry < len(self.P_HISTORY) - 1):
+                    retry += 1
+                    continue
+                raise
+
+    def _stream_attempt(self, messages: list[dict], temperature: float | None,
+                        retry: int = 0):
         payload: dict[str, Any] = {
             "model": self.model,
-            "messages": messages,
+            "messages": self._compact_messages(messages, retry),
             "max_tokens": self.max_tokens,
             "temperature": self.temperature if temperature is None else temperature,
             "stream": True,

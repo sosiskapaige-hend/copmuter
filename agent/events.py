@@ -189,6 +189,11 @@ class InteractionGateway:
             self.bus.emit(T_CONFIRM_RESULT, confirm_id=pid, approved=False,
                           comment="timeout — действие отклонено автоматически")
             return False, "timeout"
+        except asyncio.CancelledError:
+            # задачу остановили, пока висел диалог — закрываем ожидание
+            self.bus.emit(T_CONFIRM_RESULT, confirm_id=pid, approved=False,
+                          comment="остановлено пользователем")
+            raise
         finally:
             with self._lock:
                 self._pending.pop(pid, None)
@@ -206,6 +211,9 @@ class InteractionGateway:
         except asyncio.TimeoutError:
             self.bus.emit(T_USER_ANSWER, ask_id=pid, answer="(нет ответа — таймаут)")
             return "(нет ответа от пользователя)"
+        except asyncio.CancelledError:
+            self.bus.emit(T_USER_ANSWER, ask_id=pid, answer="(остановлено пользователем)")
+            raise
         finally:
             with self._lock:
                 self._pending.pop(pid, None)

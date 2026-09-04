@@ -220,7 +220,9 @@ class ChatService:
             return {"ok": True, "stopped": "stream"}
         tid = self._agent_task.get(chat_id)
         if tid:
-            self.rt.agent.stop_task(tid)
+            # force=True: отменяем даже длинный запрос к LLM, чтобы кнопка
+            # «Остановить» срабатывала сразу, а не после ответа модели.
+            self.rt.agent.stop_task(tid, force=True)
             return {"ok": True, "stopped": "agent"}
         return {"ok": False, "error": "этот чат ничего не генерирует"}
 
@@ -234,10 +236,12 @@ class ChatService:
         content = ""
         think = ""
         error = ""
+        stopped = False
         try:
             messages = self._llm_messages(chat_id)
             for kind, piece in self.rt.llm.chat_stream(messages):
                 if stop.is_set():
+                    stopped = True
                     break
                 if kind == "think":
                     think += piece
@@ -250,11 +254,16 @@ class ChatService:
                                      message_id=message_id, kind="content",
                                      text=piece, pos=len(content))
         except Exception as e:  # noqa: BLE001
+            # контекст переполнен стрим уже пробует ужать сам (llm.chat_stream);
+            # сюда попадают только настоящие сбои
             error = self._friendly_llm_error(e)
         finally:
             self._streams.pop(chat_id, None)
 
-        if not content.strip() and error:
+        if stopped and not content.strip():
+            content = "⏹ Генерация остановлена."
+            error = ""
+        elif not content.strip() and error:
             content = (f"⚠️ Не удалось получить ответ модели.\n\n`{error}`\n\n"
                        "Проверьте, что сервер запущен (LM Studio → Developer → "
                        "Start Server) и модель указана верно — ⚙ Настройки.")

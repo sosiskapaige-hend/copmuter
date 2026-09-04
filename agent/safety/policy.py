@@ -1,6 +1,7 @@
 """Политика безопасности: классификация риска и режимы работы.
 
 Режимы (mode):
+- full       — ПОЛНЫЙ доступ: агент никогда не спрашивает (даже критичное);
 - auto       — без вопросов, кроме CRITICAL;
 - confirm    — подтверждение от MEDIUM (по умолчанию);
 - step       — подтверждение КАЖДОГО действия;
@@ -8,6 +9,8 @@
 - plan_only  — только план, ничего не выполняется.
 
 Уровень риска = max(базовый риск инструмента, динамическая оценка по аргументам).
+В режиме full пользователь явно отказывается от диалогов подтверждения;
+страховкой остаются журнал действий и undo (журнал пишется всегда).
 """
 from __future__ import annotations
 
@@ -16,7 +19,7 @@ from typing import Any
 
 from ..tools.base import Risk, RISK_NAMES, ToolContext, Tool
 
-_MODES = {"auto", "confirm", "step", "observe", "plan_only"}
+_MODES = {"full", "auto", "confirm", "step", "observe", "plan_only"}
 
 
 @dataclass
@@ -54,6 +57,9 @@ class SafetyPolicy:
 
     def _needs_confirm(self, mode: str, risk: Risk, reason: str = "") -> bool:
         bulk = "массовая" in reason
+        if mode == "full":
+            # ПОЛНЫЙ доступ: пользователь явно разрешил действовать без вопросов.
+            return False
         if mode == "step":
             return True
         if mode in ("auto", "observe"):
