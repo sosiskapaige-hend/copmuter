@@ -40,6 +40,10 @@ class AgentConfig:
     trash_before_delete: bool = True
     log_level: str = "INFO"
     gui_lock_timeout: float = 120.0
+    # Сколько схем инструментов отправлять модели за ход. Полный набор (~84)
+    # ≈ 10k токенов — локальные модели с контекстом 4–8k его не вмещают.
+    # Отбор — по релевантности задаче (agent/agent/tool_select.py); 0 = все.
+    tools_budget: int = 40
 
 
 @dataclass
@@ -145,7 +149,7 @@ class Config:
 
         agent = _sec("agent")
         for k in ("max_iterations", "max_retry_per_action", "assess_every_n_steps",
-                  "context_window_messages"):
+                  "context_window_messages", "tools_budget"):
             if k in agent:
                 setattr(cfg.agent, k, int(agent[k]))
         if "ask_user_timeout" in agent:

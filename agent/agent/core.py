@@ -26,6 +26,7 @@ from ..safety.policy import SafetyPolicy
 from ..tools.base import ToolContext
 from ..tools.registry import ToolRegistry
 from .planner import Planner
+from .tool_select import select_tools, find_tool_names
 
 
 @dataclass
@@ -123,6 +124,9 @@ class Agent:
             replans = 0
             final_checks = 0
             last_assess = 0
+            idle_replies = 0          # ответы модели текстом без действия подряд
+            actions_done = 0          # сколько инструментов реально выполнено
+            pinned: set[str] = set()  # инструменты, упомянутые моделью/ошибками
             done_summary_lines: list[str] = []
             max_iter = self.cfg.agent.max_iterations
 
@@ -138,10 +142,13 @@ class Agent:
 
                 st.iteration += 1
                 decision = await self.llm.next_action(st.goal, self._context(st),
-                                                      history, self.registry.schemas())
+                                                      history, self._tool_schemas(st, pinned))
                 if decision.thought:
                     self.bus.emit("thought", task_id=st.task_id,
                                   text=decision.thought[:400])
+                    # инструменты, о которых модель «думает», попадут в набор
+                    # на следующем ходу, даже если их отсеял бюджет
+                    pinned |= find_tool_names(decision.thought, self.registry.names())
 
                 # --- вопрос пользователю ---
                 if decision.ask:
@@ -157,7 +164,11 @@ class Agent:
                     assess = await self.llm.assess(st.goal,
                                                    "\n".join(done_summary_lines)[-3000:],
                                                    st.last_error or None)
-                    if assess.achieved or final_checks >= 2:
+                    # Завершаем, если проверка подтвердила цель, либо модель
+                    # настаивает повторно — но ТОЛЬКО если хоть что-то реально
+                    # сделано. «Финал» без единого действия = отказ модели
+                    # работать; такую задачу нельзя отмечать как выполненную.
+                    if assess.achieved or (final_checks >= 2 and actions_done > 0):
                         st.status = "done"
                         st.progress = 100
                         st.summary = decision.final
@@ -166,11 +177,23 @@ class Agent:
                                       summary=decision.final,
                                       details=f"progress={assess.progress}% {assess.message}")
                         return st
+                    if actions_done == 0 and final_checks >= 3:
+                        st.status = "failed"
+                        st.summary = ("Модель не выполнила ни одного действия и трижды пыталась "
+                                      "завершить задачу текстом. Последний ответ модели:\n\n"
+                                      f"{decision.final[:1200]}\n\n"
+                                      "Проверьте в ⚙ Настройках, что модель поддерживает вызов "
+                                      "инструментов (function calling), или попробуйте другую модель.")
+                        self.sessions.save(st)
+                        self.bus.emit("task_failed", task_id=st.task_id, error=st.summary)
+                        return st
                     # LLM хочет завершить, но цель не достигнута
                     history.append({"role": "user",
                                     "content": ("ОСТАНОВИСЬ. Ты заявил готовность, но проверка показала: "
                                                 f"прогресс {assess.progress}%. Осталось: "
-                                                f"{'; '.join(assess.remaining) or assess.message}. Продолжай работать.")})
+                                                f"{'; '.join(assess.remaining) or assess.message}. "
+                                                "Вызови нужный инструмент. Текст без вызова инструмента "
+                                                "ничего не делает.")})
                     self.bus.emit("log", level="warn",
                                   message=f"LLM хотел завершить, но цель не достигнута ({assess.progress}%)")
                     continue
@@ -178,17 +201,55 @@ class Agent:
                 # --- вызов инструмента ---
                 tc = decision.tool_call
                 if tc is None:
+                    # Модель ответила текстом («сейчас создам папку…») вместо
+                    # действия. Это самая частая причина «агент отвечает, но
+                    # ничего не делает». Настойчиво требуем вызов инструмента,
+                    # после нескольких попыток — честно завершаем с ошибкой.
+                    idle_replies += 1
+                    if idle_replies >= 4:
+                        st.status = "failed"
+                        st.summary = ("Модель не вызывает инструменты — она только описывает действия "
+                                      "текстом, поэтому на компьютере ничего не выполняется.\n\n"
+                                      f"Последний ответ модели:\n{(decision.thought or '')[:800]}\n\n"
+                                      "Что проверить: ⚙ Настройки → включён ли «function calling»; "
+                                      "поддерживает ли выбранная модель вызов инструментов "
+                                      "(для LM Studio подходят Qwen3 / Qwen2.5-Instruct, Llama 3.x, "
+                                      "Mistral); достаточно ли контекста (≥ 8k токенов).")
+                        self.sessions.save(st)
+                        self.bus.emit("task_failed", task_id=st.task_id, error=st.summary)
+                        return st
+                    history.append({"role": "assistant", "content": (decision.thought or "")[:800]})
                     history.append({"role": "user",
-                                    "content": "Вызови инструмент или заверши задачу (finish_task)."})
+                                    "content": ("Это был текст, а не действие — на компьютере ничего не "
+                                                "произошло. СЕЙЧАС вызови ОДИН подходящий инструмент "
+                                                "(например fs_mkdir, terminal_run, launch_app, open_url). "
+                                                "Если цель уже фактически достигнута и проверена — вызови "
+                                                "finish_task(summary=...). Нужен ответ пользователя — "
+                                                "ask_user(question=...).")})
+                    self.bus.emit("log", level="warn",
+                                  message=f"модель ответила текстом без действия ({idle_replies}/4)")
                     continue
+                idle_replies = 0
 
                 tool = self.registry.get(tc.name)
                 self.bus.emit("tool_call", task_id=st.task_id, name=tc.name,
                               args=_small_args(tc.args))
+                # Ход модели фиксируем в истории: без него модель «не помнит»,
+                # что уже вызывала, и повторяет одно и то же действие.
+                history.append({"role": "assistant",
+                                "content": ((decision.thought or "").strip()[:600] + "\n"
+                                            if decision.thought else "")
+                                + f"Вызов инструмента: {tc.name}("
+                                + json.dumps(_small_args(tc.args), ensure_ascii=False)[:600] + ")"})
 
                 if tool is None:
+                    # подсказываем ближайшие по названию инструменты
+                    import difflib
+                    close = difflib.get_close_matches(tc.name, self.registry.names(), n=5, cutoff=0.4)
+                    pinned |= set(close)
                     obs = (f"Инструмент '{tc.name}' не существует. "
-                           f"Доступны: {', '.join(self.registry.names())}")
+                           + (f"Похожие: {', '.join(close)}. " if close else "")
+                           + f"Все доступные: {', '.join(self.registry.names())}")
                     history.append({"role": "tool", "tool": tc.name, "ok": False,
                                     "content": obs})
                     continue
@@ -216,6 +277,7 @@ class Agent:
                 result = await self.registry.call(tc.name, tc.args, self._ctx)
                 dt = time.time() - t0
                 ok = result.ok
+                actions_done += 1
                 out_text = result.for_llm()
                 self.bus.emit("observation", task_id=st.task_id, name=tc.name, ok=ok,
                               output=out_text[:1000], error=result.error[:500],
@@ -284,9 +346,7 @@ class Agent:
                     if assess.achieved and st.iteration >= 2:
                         st.status = "done"
                         st.progress = 100
-                        st.summary = (assess.message + " "
-                                      + done_summary_lines[-1].replace("✔ ", "Последнее: ") if done_summary_lines
-                                      else assess.message)
+                        st.summary = await self._final_summary(st, done_summary_lines, assess)
                         self.sessions.save(st)
                         self.bus.emit("task_done", task_id=st.task_id, ok=True, summary=st.summary)
                         return st
@@ -315,7 +375,7 @@ class Agent:
             raise
         except Exception as e:  # noqa: BLE001
             st.status = "failed"
-            st.summary = f"Критическая ошибка агента: {type(e).__name__}: {e}"
+            st.summary = _friendly_agent_error(e, self.cfg)
             self.sessions.save(st)
             self.bus.emit("task_failed", task_id=st.task_id, error=st.summary)
             return st
@@ -337,6 +397,57 @@ class Agent:
             history.append({"role": "user",
                             "content": "ПЛАН ПЕРЕСОБРАН (см. контекст). Работай по новому плану."})
             self.sessions.save(st)
+
+    async def _final_summary(self, st: TaskState, done_lines: list[str], assess: Any) -> str:
+        """Человеческий итог для пользователя, когда задача завершена по
+        оценке прогресса (модель не вызвала finish_task сама).
+
+        Раньше в чат уходило сырое «ok Последнее: fs_list({'path': ...}): <d> …».
+        """
+        steps = [ln for ln in done_lines if ln.startswith("✔")]
+        fallback_lines = ["✅ Задача выполнена."]
+        if assess.message and assess.message.strip().lower() not in ("ok", "ок", "done"):
+            fallback_lines.append(assess.message.strip())
+        if steps:
+            fallback_lines.append("")
+            fallback_lines.append("Что сделано:")
+            for ln in steps[-6:]:
+                # «✔ fs_mkdir({'path': 'X'}): Создана папка: /…» → «• Создана папка: /…»
+                tail = ln.split("): ", 1)[1] if "): " in ln else ln[2:]
+                fallback_lines.append(f"• {tail.strip()[:160]}")
+        fallback = "\n".join(fallback_lines)
+        try:
+            text = await self.llm.answer([
+                {"role": "system", "content": (
+                    "Ты — AI-агент, только что выполнивший задачу на компьютере пользователя. "
+                    "Напиши краткий итог (2-4 предложения, на языке пользователя): что сделано, "
+                    "где результат. Только факты из списка действий, без выдумок и без markdown-заголовков.")},
+                {"role": "user", "content": f"Задача: {st.goal}\n\nВыполненные действия:\n"
+                                            + "\n".join(done_lines[-12:])},
+            ])
+            text = (text or "").strip()
+            if text and len(text) < 1500 and "{" not in text[:2]:
+                return text
+        except Exception:  # noqa: BLE001 — итог не должен ронять задачу
+            pass
+        return fallback
+
+    def _tool_schemas(self, st: TaskState, pinned: set[str] | None = None) -> list[dict]:
+        """Схемы инструментов для текущего хода с учётом бюджета контекста.
+
+        Полный набор (~84 схемы ≈ 10k токенов) не помещается в окно
+        локальных моделей — отбираем релевантные задаче (ядро + по ключевым
+        словам цели/плана + уже использованные + упомянутые моделью).
+        """
+        budget = int(getattr(self.cfg.agent, "tools_budget", 0) or 0)
+        all_tools = self.registry.all()
+        if budget <= 0 or budget >= len(all_tools):
+            return [t.to_schema() for t in all_tools]
+        plan_text = " ".join(f"{s.get('title','')} {s.get('detail','')}" for s in (st.plan or []))
+        recent = [s.tool for s in st.steps[-20:]]
+        chosen = select_tools(st.goal, plan_text, recent, pinned or (), all_tools,
+                              platform=self.platform, budget=budget)
+        return [t.to_schema() for t in chosen]
 
     def _context(self, st: TaskState) -> str:
         from .prompts import build_context
@@ -384,6 +495,39 @@ class Agent:
 
     def list_running(self) -> list[str]:
         return list(self.running_tasks.keys())
+
+
+def _friendly_agent_error(e: Exception, cfg: Any) -> str:
+    """Понятное объяснение сбоя вместо «LLMError: Сеть: [Errno 111]»."""
+    s = str(e)
+    low = s.lower()
+    url = getattr(getattr(cfg, "llm", None), "base_url", "")
+    model = getattr(getattr(cfg, "llm", None), "model", "")
+    if "connection refused" in low or "errno 111" in low or "10061" in low or "errno 61" in low:
+        return (f"Не удалось подключиться к серверу модели ({url}).\n\n"
+                "Агент не может действовать без модели. Что проверить:\n"
+                "• LM Studio запущен, модель загружена, включён Developer → Start Server (порт 1234);\n"
+                "• адрес сервера в ⚙ Настройках совпадает с тем, что показывает LM Studio;\n"
+                "• кнопка «Проверить связь» в ⚙ Настройках отвечает «сервер доступен».")
+    if "timed out" in low or "timeout" in low:
+        return (f"Модель ({model}) не ответила за отведённое время.\n\n"
+                "Обычно это слишком большая модель для вашего железа или зависший сервер. "
+                "Попробуйте модель поменьше (например Qwen3-4B/8B) или перезапустите сервер.")
+    if "http 404" in low:
+        return (f"Сервер {url} отвечает 404 — модель «{model}» не найдена.\n\n"
+                "В ⚙ Настройках нажмите «Обновить» и выберите модель из списка сервера.")
+    if "http 401" in low or "http 403" in low:
+        return (f"Сервер {url} отклонил запрос (нет доступа).\n\n"
+                "Проверьте API-ключ в ⚙ Настройках.")
+    if "http 400" in low and ("context" in low or "token" in low or "length" in low):
+        return ("Запрос не поместился в контекст модели.\n\n"
+                "Увеличьте контекст (LM Studio → загрузка модели → Context Length ≥ 8192) "
+                "или уменьшите `agent.tools_budget` в config.json (например 25).")
+    if "http 400" in low and ("tool" in low or "function" in low):
+        return ("Сервер не принимает вызовы инструментов (function calling) для этой модели.\n\n"
+                "Выключите «function calling» в ⚙ Настройках — агент перейдёт на JSON-протокол, "
+                "либо выберите модель с поддержкой tools (Qwen2.5/Qwen3-Instruct, Llama 3.x).")
+    return f"Критическая ошибка агента: {type(e).__name__}: {s[:600]}"
 
 
 def _small_args(args: dict) -> dict:

@@ -13,6 +13,7 @@
   "llm_fallbacks": [],
   "agent": {
     "max_iterations": 80,
+    "tools_budget": 40,
     "max_retry_per_action": 3,
     "assess_every_n_steps": 3,
     "context_window_messages": 40,
