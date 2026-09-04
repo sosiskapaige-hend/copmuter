@@ -97,14 +97,45 @@ class OpenAICompatibleLLM:
     def _compact_messages(self, messages: list[dict]) -> list[dict]:
         compact: list[dict] = []
         for msg in messages[:20]:
-            item = dict(msg)
-            for key in ("content", "text"):
-                if key in item and isinstance(item[key], str):
-                    item[key] = self._trim_text(item[key], 1200)
-            if "tool_calls" in item and isinstance(item["tool_calls"], list):
-                item["tool_calls"] = item["tool_calls"][:2]
-            compact.append(item)
+            compact.append(self._wire_message(msg))
         return compact
+
+    def _wire_message(self, msg: dict) -> dict:
+        """Приводит сообщение к валидной для chat/completions форме.
+
+        OpenAI-совместимые серверы (OpenAI, LM Studio, Ollama, Groq, ...)
+        требуют, чтобы у сообщений ролей user/system/tool было поле `content`.
+        Внутренняя история хранит наблюдения инструментов как
+        {role: tool, tool, ok, text} — здесь они превращаются в стандартное
+        {role: tool, content: "..."}, а служебные поля отбрасываются, чтобы
+        строгие серверы не отвергли payload.
+        """
+        role = msg.get("role") or "user"
+        out: dict[str, Any] = {"role": role}
+
+        if role == "tool":
+            text = msg.get("content", msg.get("text", ""))
+            if not isinstance(text, str):
+                text = json.dumps(text, ensure_ascii=False)
+            out["content"] = self._trim_text(text, 1200)
+            tc_id = msg.get("tool_call_id")
+            if isinstance(tc_id, str) and tc_id:
+                out["tool_call_id"] = tc_id
+        else:
+            content = msg.get("content")
+            if isinstance(content, str):
+                out["content"] = self._trim_text(content, 1200)
+            elif content is None:
+                out["content"] = ""
+            else:
+                out["content"] = content   # мультимодальный content (список частей)
+
+        if role == "assistant":
+            tc = msg.get("tool_calls")
+            if isinstance(tc, list) and tc:
+                out["tool_calls"] = tc[:2]
+
+        return out
 
     def _compact_tools(self, tools: list[dict] | None) -> list[dict] | None:
         if not tools or not self.supports_tool_calling:
