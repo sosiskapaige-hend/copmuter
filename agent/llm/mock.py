@@ -253,5 +253,23 @@ class MockLLM:
         last = messages[-1].get("content", "") if messages else ""
         return f"[mock-ответ] {str(last)[:120]}"
 
+    def chat_stream(self, messages: list[dict], temperature: float | None = None):
+        import time as _t
+        last = ""
+        for m in reversed(messages):
+            c = m.get("content")
+            if isinstance(c, str) and c.strip():
+                last = c
+                break
+        text = (f"[mock] Ассистент работает в офлайн-режиме (LLM не подключена). "
+                f"Вы сказали: «{last[:200]}». Подключите модель в ⚙ Настройках "
+                f"(например, LM Studio: http://localhost:1234/v1).")
+        for word in text.split(" "):
+            yield "content", word + " "
+            _t.sleep(0.01)
+
+    def list_models(self) -> list[str]:
+        return ["mock"]
+
     async def describe_image(self, image_b64: str, prompt: str) -> str:
         return "[mock-vision] изображение получено (headless-демо): на экране ничего критичного."

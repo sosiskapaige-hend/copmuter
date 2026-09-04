@@ -140,7 +140,8 @@ class Agent:
                 decision = await self.llm.next_action(st.goal, self._context(st),
                                                       history, self.registry.schemas())
                 if decision.thought:
-                    self.bus.emit("thought", text=decision.thought[:400])
+                    self.bus.emit("thought", task_id=st.task_id,
+                                  text=decision.thought[:400])
 
                 # --- вопрос пользователю ---
                 if decision.ask:
@@ -182,7 +183,8 @@ class Agent:
                     continue
 
                 tool = self.registry.get(tc.name)
-                self.bus.emit("tool_call", name=tc.name, args=_small_args(tc.args))
+                self.bus.emit("tool_call", task_id=st.task_id, name=tc.name,
+                              args=_small_args(tc.args))
 
                 if tool is None:
                     obs = (f"Инструмент '{tc.name}' не существует. "
@@ -214,7 +216,7 @@ class Agent:
                 dt = time.time() - t0
                 ok = result.ok
                 out_text = result.for_llm()
-                self.bus.emit("observation", name=tc.name, ok=ok,
+                self.bus.emit("observation", task_id=st.task_id, name=tc.name, ok=ok,
                               output=out_text[:1000], error=result.error[:500],
                               elapsed=round(dt, 2),
                               data={k: v for k, v in result.data.items() if k != "undo"})
@@ -236,7 +238,8 @@ class Agent:
                     done_summary_lines.append(f"✘ {tc.name}: {result.error[:200]}")
                     key = tc.name + json.dumps(tc.args, sort_keys=True, default=str)
                     consecutive_errors[key] = consecutive_errors.get(key, 0) + 1
-                    self.bus.emit("error", tool=tc.name, error=result.error[:500])
+                    self.bus.emit("error", task_id=st.task_id, tool=tc.name,
+                                  error=result.error[:500])
                     if consecutive_errors[key] >= self.cfg.agent.max_retry_per_action:
                         # самонаказание за повтор: меняем стратегию
                         history.append({"role": "user",
