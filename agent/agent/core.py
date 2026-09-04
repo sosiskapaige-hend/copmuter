@@ -189,7 +189,8 @@ class Agent:
                 if tool is None:
                     obs = (f"Инструмент '{tc.name}' не существует. "
                            f"Доступны: {', '.join(self.registry.names())}")
-                    history.append({"role": "tool", "tool": tc.name, "ok": False, "text": obs})
+                    history.append({"role": "tool", "tool": tc.name, "ok": False,
+                                    "content": obs})
                     continue
 
                 # --- безопасность ---
@@ -203,7 +204,7 @@ class Agent:
                     if not approved:
                         note = f"ПОЛЬЗОВАТЕЛЬ ОТКАЗАЛ. Комментарий: {comment or '—'}. Выбери другой путь."
                         history.append({"role": "tool", "tool": tc.name, "ok": False,
-                                        "text": note})
+                                        "content": note})
                         self.bus.emit("log", level="warn",
                                       message=f"отказ пользователя: {tc.name}")
                         continue
@@ -253,7 +254,7 @@ class Agent:
                             await self._replan(st, history, consecutive_errors)
 
                 history.append({"role": "tool", "tool": tc.name, "ok": ok,
-                                "text": out_text})
+                                "content": out_text})
 
                 # finish_task
                 if ok and result.data.get("_finish"):
@@ -297,18 +298,9 @@ class Agent:
                 # Жёсткое ограничение на суммарный размер истории/контекста: 
                 # локальные модели (например, Qwen 4B) быстро падают по context window.
                 # Оставляем только последние сообщения и режем длинные поля.
-                history = [
-                    {
-                        **msg,
-                        "content": (msg.get("content")[:1200] + "... [усечено]")
-                        if isinstance(msg.get("content"), str) and len(msg.get("content", "")) > 1200
-                        else msg.get("content"),
-                        "text": (msg.get("text")[:1200] + "... [усечено]")
-                        if isinstance(msg.get("text"), str) and len(msg.get("text", "")) > 1200
-                        else msg.get("text"),
-                    }
-                    for msg in history
-                ]
+                # Режем ТОЛЬКО строковый content, не добавляя ключей (иначе у
+                # сообщений появляется content: null, что ломает chat/completions).
+                history = _truncate_history(history)
 
             # лимит итераций
             st.status = "failed"
@@ -401,6 +393,22 @@ def _small_args(args: dict) -> dict:
             out[k] = v[:200] + "…"
         else:
             out[k] = v
+    return out
+
+
+def _truncate_history(history: list[dict], limit: int = 1200) -> list[dict]:
+    """Обрезает длинные строковые `content` в истории, не добавляя новых ключей.
+
+    Раньше здесь в каждое сообщение принудительно вставлялись `content` и
+    `text` (иногда со значением None), что давало `content: null` у
+    tool-сообщений и ломало валидацию chat/completions на стороне сервера.
+    """
+    out: list[dict] = []
+    for msg in history:
+        content = msg.get("content")
+        if isinstance(content, str) and len(content) > limit:
+            msg = {**msg, "content": content[:limit] + "... [усечено]"}
+        out.append(msg)
     return out
 
 
