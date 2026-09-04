@@ -354,6 +354,10 @@ class ChatService:
             content = (st.summary or "").strip() or "(агент завершил без резюме)"
             if not ok and st.status == "cancelled":
                 content = "⏹ Выполнение остановлено.\n\n" + content
+            elif not ok:
+                # failed: показываем причину явно, а не как обычный ответ
+                content = "⚠️ Задача не выполнена.\n\n" + content
+                error = st.summary[:300] if st.summary else "задача не выполнена"
         except Exception as e:  # noqa: BLE001
             error = f"{type(e).__name__}: {e}"
             content = f"💥 Сбой агента: {error}"

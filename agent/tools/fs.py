@@ -24,8 +24,94 @@ from .base import Tool, ToolResult, ToolContext, Risk, _prop
 from .registry import ToolRegistry
 
 
+_SPECIAL_DIRS = {
+    # что пишут модели/пользователи → имя стандартной папки профиля
+    "desktop": "Desktop", "рабочий стол": "Desktop", "рабочем столе": "Desktop",
+    "рабочего стола": "Desktop", "documents": "Documents", "документы": "Documents",
+    "downloads": "Downloads", "загрузки": "Downloads", "pictures": "Pictures",
+    "изображения": "Pictures", "картинки": "Pictures", "music": "Music", "музыка": "Music",
+    "videos": "Videos", "видео": "Videos",
+}
+
+
+def _windows_known_folder(name: str) -> Path | None:
+    """Реальный путь стандартной папки Windows (Desktop может лежать в OneDrive
+    или быть перенесён; читаем из реестра User Shell Folders)."""
+    if os.name != "nt":
+        return None
+    guids = {"Desktop": "Desktop", "Documents": "Personal", "Downloads": "{374DE290-123F-4565-9164-39C4925E467B}",
+             "Pictures": "My Pictures", "Music": "My Music", "Videos": "My Video"}
+    key_name = guids.get(name)
+    if not key_name:
+        return None
+    try:
+        import winreg  # type: ignore[import-not-found]
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders") as k:
+            val, _ = winreg.QueryValueEx(k, key_name)
+            return Path(os.path.expandvars(str(val)))
+    except Exception:
+        return None
+
+
+def _special_dir(name: str) -> Path:
+    win = _windows_known_folder(name)
+    if win is not None and win.exists():
+        return win
+    home = Path.home()
+    cand = home / name
+    if cand.exists():
+        return cand
+    # OneDrive-перенос (частая ситуация на Windows 10/11)
+    for od in ("OneDrive", "OneDrive - Personal"):
+        p = home / od / name
+        if p.exists():
+            return p
+    # Linux: локализованные XDG-папки
+    try:
+        cfg = home / ".config" / "user-dirs.dirs"
+        if cfg.is_file():
+            key = f"XDG_{name.upper()}_DIR"
+            for line in cfg.read_text(encoding="utf-8", errors="replace").splitlines():
+                if line.startswith(key + "="):
+                    v = line.split("=", 1)[1].strip().strip('"').replace("$HOME", str(home))
+                    if Path(v).exists():
+                        return Path(v)
+    except OSError:
+        pass
+    return cand
+
+
 def _p(path: str) -> Path:
-    return Path(os.path.expanduser(str(path)))
+    """Нормализует путь: ~, %VAR%, $VAR, «рабочий стол/Desktop» и т.п.
+
+    Модели часто пишут «Рабочий стол/Test», «Desktop\\Test», «~/Desktop/Test»
+    или «%USERPROFILE%\\Desktop\\Test» — все эти варианты должны вести в
+    реальную папку рабочего стола пользователя.
+    """
+    s = str(path or "").strip().strip("«»\"'")
+    if not s:
+        return Path(".")
+    s = os.path.expandvars(os.path.expanduser(s))
+    norm = s.replace("\\", "/")
+    parts = [x for x in norm.split("/") if x not in ("", ".")]
+    if parts:
+        head = parts[0].lower()
+        # «Рабочий стол/Test» или «Desktop/Test» (относительный путь от спец-папки)
+        if head in _SPECIAL_DIRS and not os.path.isabs(s):
+            base = _special_dir(_SPECIAL_DIRS[head])
+            return base.joinpath(*parts[1:]) if len(parts) > 1 else base
+        # «~/Desktop/Test» уже раскрыт; «/home/u/Desktop» — тоже. Но если
+        # ~/Desktop не существует (перенесён в OneDrive) — подменяем.
+        home_parts = [x for x in str(Path.home()).replace("\\", "/").split("/") if x]
+        if len(parts) > len(home_parts) and \
+                [x.lower() for x in parts[:len(home_parts)]] == [x.lower() for x in home_parts]:
+            nxt = parts[len(home_parts)].lower()
+            if nxt in _SPECIAL_DIRS:
+                base = _special_dir(_SPECIAL_DIRS[nxt])
+                rest = parts[len(home_parts) + 1:]
+                return base.joinpath(*rest) if rest else base
+    return Path(s)
 
 
 def _docx_text(p: Path) -> str:
