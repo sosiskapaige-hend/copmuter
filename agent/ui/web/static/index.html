@@ -1080,17 +1080,31 @@ function ensureMsg(id,agent){
   }
   return m;
 }
+// Принадлежит ли событие «нашей» активной генерации. Для НОВОГО чата
+// POST /api/chat/send ещё не вернул chat_id (S.currentId === null), но SSE
+// уже доставляет chat_start/delta — раньше такие события отбрасывались,
+// и ответ «зависал» навсегда (спиннер, сообщение бота не появлялось).
+function ownGeneration(id){
+  if(id===S.currentId) return true;
+  if(S.currentId===null&&S.generating) return true;
+  return false;
+}
+function adoptChat(id){
+  if(S.currentId!==id) S.currentId=id;
+}
 function handleEvent(ev){
   const d=ev.data||{};
   switch(ev.type){
     case "chat_start":{
-      if(d.chat_id!==S.currentId) break;
+      if(!ownGeneration(d.chat_id)) break;
+      adoptChat(d.chat_id);
       ensureMsg(d.message_id,d.agent);
       S.generating=true; updateGenUi();
       break;
     }
     case "chat_delta":{
-      if(d.chat_id!==S.currentId) break;
+      if(!ownGeneration(d.chat_id)) break;
+      adoptChat(d.chat_id);
       const m=ensureMsg(d.message_id,false);
       const field=d.kind==="think"?"think":"content";
       // pos — длина после куска: пропущенные/повторные куски отсекаются
@@ -1100,7 +1114,8 @@ function handleEvent(ev){
       break;
     }
     case "chat_done":{
-      if(d.chat_id!==S.currentId){ S.unwatched.add(d.chat_id); refreshChatsThrottled(); break; }
+      if(!ownGeneration(d.chat_id)){ S.unwatched.add(d.chat_id); refreshChatsThrottled(); break; }
+      adoptChat(d.chat_id);
       let m=S.messages.find(x=>x.id===d.message_id);
       if(!m){ // id потерялся (переподключение) — переиспользуем стриминговый placeholder
         m=[...S.messages].reverse().find(x=>x.role==="ai"&&x.streaming);
@@ -1110,12 +1125,14 @@ function handleEvent(ev){
       m.content=d.content||""; m.think=d.think||""; m.streaming=false;
       m.error=d.error&&!d.ok?(d.error||""):"";
       S.generating=false;
+      updateGenUi();
       finalizeStreamNode(m);
       refreshChats(true);
       break;
     }
     case "chat_activity":{
-      if(d.chat_id!==S.currentId){ S.unwatched.add(d.chat_id); refreshChatsThrottled(); break; }
+      if(!ownGeneration(d.chat_id)){ S.unwatched.add(d.chat_id); refreshChatsThrottled(); break; }
+      adoptChat(d.chat_id);
       // активность относится к текущему стриминговому сообщению
       let m=[...S.messages].reverse().find(x=>x.role==="ai"&&x.streaming);
       if(!m){ m={id:"agent-"+Date.now(),role:"ai",content:"",think:"",activities:[],streaming:true};
@@ -1274,7 +1291,7 @@ document.addEventListener("keydown",e=>{
 });
 
 /* ================= сайдбар: показать/скрыть ================= */
-const mobile=()=>window.matchMedia("(max-width:920px)").matches;
+const mobile=()=>!!(window.matchMedia&&window.matchMedia("(max-width:920px)").matches);
 function closeMobileSide(){
   $("sidebar").classList.remove("mobile-open");
   $("backdrop").classList.remove("show");
@@ -1291,9 +1308,10 @@ if(localStorage.getItem("aca.side")==="0"&&!mobile()) $("sidebar").classList.add
 
 /* ================= настройки ================= */
 $("settingsBtn").onclick=async()=>{
-  await loadSettings(); loadAgentTab(); loadMem(); loadSched(); loadTrig(); loadJournal(); loadSys();
+  await loadSettings(); loadAgentTab(); loadMem(); loadSched(); loadJournal(); loadSys();
   showOverlay("settingsOverlay",true);
 };
+$("modelChip").onclick=()=>$("settingsBtn").click();
 $("settingsClose").onclick=()=>showOverlay("settingsOverlay",false);
 $("settingsOverlay").addEventListener("click",e=>{
   if(e.target===$("settingsOverlay")) showOverlay("settingsOverlay",false);

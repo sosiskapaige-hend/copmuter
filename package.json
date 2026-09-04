@@ -1,0 +1,13 @@
+{
+  "name": "ai-computer-agent-ui-tests",
+  "version": "0.1.0",
+  "private": true,
+  "description": "jsdom-тесты веб-интерфейса (agent/ui/web/static/index.html)",
+  "type": "module",
+  "scripts": {
+    "test": "node tests/ui.test.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^24.1.0"
+  }
+}
