@@ -104,12 +104,18 @@ class GlobalVoice:
 
     # ---------------- запуск/останов ----------------
     def start(self) -> bool:
-        """Регистрирует глобальные хоткеи и (если включено) wake-слушатель."""
+        """Регистрирует глобальные хоткеи и (если включено) wake-слушатель.
+
+        Вызов можно повторять (в т.ч. после stop()): подписка и хоткеи не
+        дублируются, wake-поток перезапускается.
+        """
         cfg = self.cfg.voice
-        started = False
         if not cfg.get("global_enabled", True):
             return False
-        self._unsub = self.rt.bus.subscribe(self._on_bus)
+        self._stop.clear()
+        if self._unsub is None:
+            self._unsub = self.rt.bus.subscribe(self._on_bus)
+        started = False
         if _has("keyboard"):
             try:
                 self._start_hotkey_listener()
@@ -120,6 +126,13 @@ class GlobalVoice:
         if cfg.get("wake_enabled", False):
             self._start_wake_listener()
             started = True
+        if not started and self._unsub is not None:
+            # ничего не запустилось — подписка на события не нужна
+            try:
+                self._unsub()
+            except Exception:
+                pass
+            self._unsub = None
         return started
 
     def stop(self) -> None:
@@ -131,6 +144,12 @@ class GlobalVoice:
             except Exception:
                 pass
             self._hotkey_hook = None
+        if self._wake_thread is not None:
+            try:
+                self._wake_thread.join(timeout=3.0)
+            except Exception:
+                pass
+            self._wake_thread = None
         if self._unsub:
             try:
                 self._unsub()
