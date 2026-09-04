@@ -39,20 +39,21 @@ class OpenAICompatibleLLM:
 
     @staticmethod
     def _is_weak_model(model: str) -> bool:
+        """Совсем маленькие модели: JSON-протокол и tool-calling для них
+        отключаем. 4B/8B (например Qwen3-VL-8B-Instruct) нормально работают
+        с инструментами через LM Studio, поэтому сюда не входят."""
         name = (model or "").lower()
-        return any(token in name for token in ("4b", "3b", "tiny", "mini", "qwen3-vl"))
+        return any(token in name for token in ("tiny", "mini", "0.5b", "1b", "1.5b", "2b"))
 
     @staticmethod
     def _safe_max_tokens(max_tokens: int) -> int:
         try:
             v = int(max_tokens)
         except (TypeError, ValueError):
-            return 1024
+            return 2048
         if v <= 0:
-            return 1024
-        if v > 2048:
-            return 1024
-        return v
+            return 2048
+        return min(v, 16384)
 
     # ---------------- HTTP ----------------
     def _post(self, payload: dict) -> dict:
@@ -292,15 +293,116 @@ class OpenAICompatibleLLM:
         choice = self._chat(messages)
         return (choice.get("content") or "").strip()
 
+    # ---------------- чат: стриминг и диагностика ----------------
+    def chat_stream(self, messages: list[dict], temperature: float | None = None):
+        """Потоковая генерация. Отдаёт (kind, piece), где kind — "content" или
+        "think" (содержимое <think>…</think> и reasoning_content)."""
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature if temperature is None else temperature,
+            "stream": True,
+        }
+        url = f"{self.base_url}/chat/completions"
+        body = json.dumps(payload).encode("utf-8")
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key or 'sk-none'}",
+        }
+        filt = _ThinkFilter()
+        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            for raw in resp:
+                line = raw.strip()
+                if not line.startswith(b"data:"):
+                    continue
+                data = line[5:].strip()
+                if data == b"[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    continue
+                choices = chunk.get("choices") or [{}]
+                delta = choices[0].get("delta") or {}
+                reasoning = delta.get("reasoning_content")
+                if isinstance(reasoning, str) and reasoning:
+                    yield "think", reasoning
+                piece = delta.get("content")
+                if isinstance(piece, str) and piece:
+                    c, t = filt.feed(piece)
+                    if t:
+                        yield "think", t
+                    if c:
+                        yield "content", c
+            c, t = filt.flush()
+            if t:
+                yield "think", t
+            if c:
+                yield "content", c
+
+    def list_models(self) -> list[str]:
+        """Список моделей сервера (GET /models) — для выпадающего списка в UI."""
+        url = f"{self.base_url}/models"
+        req = urllib.request.Request(url, headers={
+            "Authorization": f"Bearer {self.api_key or 'sk-none'}"})
+        with urllib.request.urlopen(req, timeout=6.0) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        return sorted(str(m.get("id")) for m in (data.get("data") or []) if m.get("id"))
+
     async def describe_image(self, image_b64: str, prompt: str) -> str:
         if not self.vision:
-            return "Модель LLM не поддерживает vision — изображение проанализировать нельзя. Используйте OCR (ocr_image)."
+            return ("Модель LLM не поддерживает vision — изображение проанализировать "
+                    "нельзя. Используйте OCR (ocr_image).")
         b64 = image_b64
+        if isinstance(b64, bytes):
+            b64 = base64.b64encode(b64).decode()
         if not b64.startswith("data:"):
-            b64 = "data:image/png;base64," + base64.b64encode(image_b64.encode() if isinstance(image_b64, str) else image_b64).decode()
+            b64 = "data:image/png;base64," + b64
         msg = ([{"role": "user", "content": [
             {"type": "text", "text": prompt},
             {"type": "image_url", "image_url": {"url": b64}},
         ]}])
         choice = self._chat(msg, temperature=0.1)
         return (choice.get("content") or "").strip()
+
+
+class _ThinkFilter:
+    """Выделяет <think>…</think> из потока токенов, не ломая стриминг.
+
+    Держит «хвост» из 7 символов в буфере — на случай, что тег разрезан
+    границей чанка."""
+    OPEN = "<think>"
+    CLOSE = "</think>"
+
+    def __init__(self) -> None:
+        self.in_think = False
+        self.buf = ""
+
+    def _drain(self, c_out: list, t_out: list) -> None:
+        while self.buf:
+            tag, out = (self.CLOSE, t_out) if self.in_think else (self.OPEN, c_out)
+            idx = self.buf.find(tag)
+            if idx == -1:
+                safe = len(self.buf) - len(tag)
+                if safe > 0:
+                    out.append(self.buf[:safe])
+                    self.buf = self.buf[safe:]
+                break
+            out.append(self.buf[:idx])
+            self.buf = self.buf[idx + len(tag):]
+            self.in_think = not self.in_think
+
+    def feed(self, piece: str) -> tuple[str, str]:
+        self.buf += piece
+        c_out: list[str] = []
+        t_out: list[str] = []
+        self._drain(c_out, t_out)
+        return "".join(c_out), "".join(t_out)
+
+    def flush(self) -> tuple[str, str]:
+        rest, self.buf = self.buf, ""
+        if self.in_think:
+            return "", rest
+        return rest, ""

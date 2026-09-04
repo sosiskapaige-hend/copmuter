@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from .agent.core import Agent
+from .chats import ChatService
 from .config import Config
 from .events import EventBus, InteractionGateway
 from .llm import create_llm
@@ -56,6 +57,7 @@ class AgentRuntime:
                            self.journal, self.sessions, self.memory, self.policy,
                            self.platform, workdir=workdir)
         self.tasks = TaskManager(self.agent, self.bus, self.sessions)
+        self.chats = ChatService(self)
         self.schedules = Scheduler(cfg.state_dir, self._schedule_fire)
         self.triggers = TriggerManager(cfg.state_dir, self._trigger_fire, poll=3.0)
         self.bg = BackgroundRunner(self.bus)
@@ -123,6 +125,26 @@ class AgentRuntime:
                                               parallel_ok=parallel_ok,
                                               background=background)).result(timeout=10)
         return item.task_id
+
+    # ---------------- чат ----------------
+    def chat_send(self, chat_id: str | None, text: str,
+                  attachments: list | None = None, agent: bool = False,
+                  mode: str = "") -> dict:
+        return self.chats.send(chat_id, text, attachments=attachments,
+                               agent=agent, mode=mode or self.cfg.safety.mode)
+
+    def chat_stop(self, chat_id: str) -> dict:
+        return self.chats.stop(chat_id)
+
+    def llm_models(self) -> dict:
+        """Список моделей на сервере (для настроек UI)."""
+        fn = getattr(self.llm, "list_models", None)
+        if not callable(fn):
+            return {"ok": False, "error": "провайдер не поддерживает список моделей"}
+        try:
+            return {"ok": True, "models": fn()}
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "error": str(e)[:300]}
 
     def control(self, action: str) -> dict:
         """pause_all | resume_all | stop_all | cancel_next."""
@@ -241,7 +263,9 @@ class AgentRuntime:
                         "model": self.cfg.llm.model,
                         "api_key_set": bool(self.cfg.llm.api_key),
                         "supports_tool_calling": self.cfg.llm.supports_tool_calling,
-                        "vision": self.cfg.llm.vision},
+                        "vision": self.cfg.llm.vision,
+                        "max_tokens": self.cfg.llm.max_tokens,
+                        "temperature": self.cfg.llm.temperature},
                 "mode": self.cfg.safety.mode}
 
     def settings_apply(self, body: dict) -> dict:
@@ -260,6 +284,14 @@ class AgentRuntime:
             llm.supports_tool_calling = bool(d["supports_tool_calling"])
         if "vision" in d:
             llm.vision = bool(d["vision"])
+        try:
+            llm.max_tokens = max(256, min(int(d["max_tokens"]), 16384))
+        except (TypeError, ValueError, KeyError):
+            pass
+        try:
+            llm.temperature = max(0.0, min(float(d["temperature"]), 2.0))
+        except (TypeError, ValueError, KeyError):
+            pass
         try:
             new_llm = self.reload_llm()
         except Exception as e:  # noqa: BLE001
@@ -293,6 +325,8 @@ class AgentRuntime:
                 "api_key": self.cfg.llm.api_key,
                 "supports_tool_calling": self.cfg.llm.supports_tool_calling,
                 "vision": self.cfg.llm.vision,
+                "max_tokens": self.cfg.llm.max_tokens,
+                "temperature": self.cfg.llm.temperature,
             }
             p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         except (OSError, json.JSONDecodeError):

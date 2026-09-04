@@ -1,23 +1,33 @@
-"""Web UI: dashboard на чистом stdlib (http.server) + SSE live-поток.
+"""Web UI: чат-интерфейс на чистом stdlib (http.server) + SSE live-поток.
 
-Точки входа:
-  GET  /               — index.html (одностраничный дашборд)
-  GET  /api/state      — снимок состояния (режим, задачи, память, расписания...)
-  GET  /api/system     — CPU/RAM/диск
-  GET  /api/screen     — последний скриншот (PNG)
-  GET  /api/events     — SSE: живой поток событий агента
-  GET  /api/journal    — журнал действий (undo)
-  GET  /api/voice      — доступность голосовых модулей
-  POST /api/task       — {text, mode?, background?}
-  POST /api/queue      — {texts: [...], mode?}
-  POST /api/mode       — {mode}
-  POST /api/control    — {action: pause_all|resume_all|stop_all|cancel_next}
-  POST /api/confirm    — {id, approve, comment}
-  POST /api/answer     — {id, answer}
-  POST /api/undo       — {steps}
-  POST /api/memory     — {action: add|remove|list, text?, id?}
-  POST /api/schedule   — {action: add|remove, expr?, text?, id?}
-  POST /api/trigger    — {action: add|remove, path?, pattern?, text?, id?}
+Основные точки входа:
+  GET  /                      — index.html (чат)
+  GET  /api/chats             — список чатов
+  POST /api/chats             — создать чат {title?}
+  GET  /api/chats/<id>        — чат с сообщениями
+  POST /api/chats/<id>/rename — {title}
+  POST /api/chats/<id>/delete — удалить чат
+  POST /api/chat/send         — {chat_id?, text, attachments?, agent?, mode?}
+  POST /api/chat/stop         — {chat_id}
+  POST /api/upload            — файл (raw body, имя в X-File-Name)
+  GET  /api/files/<name>      — отдать загруженный файл (картинки в чате)
+  GET  /api/events            — SSE: живой поток (дельты чата + агент)
+  GET  /api/llm/models        — список моделей сервера (LM Studio / Ollama)
+  GET  /api/state             — снимок состояния (настройки/агент)
+  GET  /api/settings          — настройки модели
+  POST /api/settings          — применить настройки модели
+  POST /api/task              — задача агента без чата (совместимость)
+  POST /api/mode              — {mode}
+  POST /api/control           — {action: pause_all|resume_all|stop_all|cancel_next}
+  POST /api/confirm           — {id, approve, comment}
+  POST /api/answer            — {id, answer}
+  POST /api/undo              — {steps}
+  POST /api/memory            — {action: add|remove|list, ...}
+  POST /api/schedule          — {action: add|remove, ...}
+  POST /api/trigger           — {action: add|remove, ...}
+  GET  /api/journal           — журнал действий (undo)
+  GET  /api/system            — CPU/RAM/диск
+  POST /api/stt               — серверный STT (Whisper, опционально)
 """
 from __future__ import annotations
 
@@ -25,8 +35,10 @@ import json
 import mimetypes
 import os
 import queue
+import re
 import threading
 import time
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -34,11 +46,14 @@ from typing import Any
 from ...runtime import AgentRuntime
 
 STATIC_DIR = Path(__file__).parent / "static"
+UPLOAD_LIMIT = 25 * 1024 * 1024  # 25 МБ
+
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
 
 
 class SSEClient:
     def __init__(self) -> None:
-        self.q: "queue.Queue[str | None]" = queue.Queue(maxsize=1000)
+        self.q: "queue.Queue[str | None]" = queue.Queue(maxsize=2000)
         self.unsub = None
 
     def _on_event(self, ev) -> None:
@@ -66,7 +81,7 @@ class WebUI:
         class Handler(BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
 
-            def log_message(self, *a) -> None:  # тишина в логах
+            def log_message(self, *a) -> None:  # тише в логах
                 pass
 
             # ---------- helpers ----------
@@ -96,19 +111,45 @@ class WebUI:
             def _cors(self) -> None:
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, X-File-Name")
 
-            # ---------- routes ----------
             def do_OPTIONS(self) -> None:
                 self._cors()
                 self._send(204, b"", "text/plain")
 
+            # ---------- routes ----------
             def do_GET(self) -> None:
-                p = self.path.split("?")[0]
+                p = urllib.parse.unquote(self.path.split("?")[0])
                 if p in ("/", "/index.html"):
-                    f = STATIC_DIR / "index.html"
-                    data = f.read_bytes()
+                    try:
+                        data = (STATIC_DIR / "index.html").read_bytes()
+                    except OSError:
+                        self._json({"error": "index.html не найден"}, 500)
+                        return
                     self._send(200, data, "text/html; charset=utf-8")
+                    return
+                if p == "/api/chats":
+                    self._json({"chats": rt.chats.store.list()})
+                    return
+                m = re.fullmatch(r"/api/chats/([A-Za-z0-9_-]+)", p)
+                if m:
+                    chat = rt.chats.store.get(m.group(1))
+                    if chat is None:
+                        self._json({"error": "чат не найден"}, 404)
+                        return
+                    self._json({"chat": chat, "busy": rt.chats.busy(chat["id"])})
+                    return
+                m = re.fullmatch(r"/api/files/(.+)", p)
+                if m:
+                    fname = m.group(1)
+                    # защита от traversal: только имя файла, без каталогов
+                    if fname != Path(fname).name or fname in (".", ".."):
+                        self._json({"error": "not found"}, 404)
+                        return
+                    self._send_file(rt.cfg.uploads_dir / fname)
+                    return
+                if p == "/api/llm/models":
+                    self._json(rt.llm_models())
                     return
                 if p == "/api/state":
                     self._json(rt.state_snapshot())
@@ -137,8 +178,53 @@ class WebUI:
                 self._json({"error": "not found"}, 404)
 
             def do_POST(self) -> None:
-                p = self.path.split("?")[0]
+                p = urllib.parse.unquote(self.path.split("?")[0])
+                if p == "/api/upload":
+                    self._upload()   # читает raw-body сам
+                    return
                 b = self._body()
+                if p == "/api/chat/send":
+                    text = str(b.get("text") or "")
+                    attachments = b.get("attachments") or []
+                    if not isinstance(attachments, list):
+                        attachments = []
+                    r = rt.chat_send(b.get("chat_id") or None, text,
+                                     attachments=attachments,
+                                     agent=bool(b.get("agent")),
+                                     mode=b.get("mode") or "")
+                    self._json(r, 200 if r.get("ok") else 400)
+                    return
+                if p == "/api/chat/stop":
+                    r = rt.chat_stop(str(b.get("chat_id") or ""))
+                    self._json(r, 200 if r.get("ok") else 400)
+                    return
+                m = re.fullmatch(r"/api/chats/([A-Za-z0-9_-]+)/rename", p)
+                if m:
+                    chat = rt.chats.store.rename(m.group(1), str(b.get("title") or ""))
+                    if chat is None:
+                        self._json({"error": "чат не найден"}, 404)
+                        return
+                    rt.bus.emit("chats_changed")
+                    self._json({"ok": True, "chat": {"id": chat["id"],
+                                                     "title": chat["title"]}})
+                    return
+                m = re.fullmatch(r"/api/chats/([A-Za-z0-9_-]+)/delete", p)
+                if m:
+                    cid = m.group(1)
+                    if rt.chats.busy(cid):
+                        rt.chats.stop(cid)
+                        time.sleep(0.15)
+                    ok = rt.chats.store.delete(cid)
+                    if ok:
+                        rt.bus.emit("chats_changed")
+                    self._json({"ok": ok}, 200 if ok else 404)
+                    return
+                if p == "/api/chats":
+                    chat = rt.chats.store.create(str(b.get("title") or "Новый чат"))
+                    rt.bus.emit("chats_changed")
+                    self._json({"ok": True, "chat": {"id": chat["id"],
+                                                     "title": chat["title"]}})
+                    return
                 if p == "/api/task":
                     text = (b.get("text") or "").strip()
                     if not text:
@@ -177,8 +263,9 @@ class WebUI:
                 if p == "/api/memory":
                     action = b.get("action", "list")
                     if action == "add":
-                        self._json({"ok": True, "item": rt.memory_add(b.get("text", ""),
-                                                                      b.get("kind", "preference"))})
+                        self._json({"ok": True,
+                                    "item": rt.memory_add(b.get("text", ""),
+                                                          b.get("kind", "preference"))})
                     elif action == "remove":
                         self._json({"ok": rt.memory_remove(b.get("id", ""))})
                     else:
@@ -187,9 +274,8 @@ class WebUI:
                 if p == "/api/schedule":
                     action = b.get("action", "list")
                     if action == "add":
-                        r = rt.schedule_add(b.get("expr", ""), b.get("text", ""),
-                                            b.get("mode", ""))
-                        self._json(r)
+                        self._json(rt.schedule_add(b.get("expr", ""), b.get("text", ""),
+                                                   b.get("mode", "")))
                     elif action == "remove":
                         self._json({"ok": rt.schedule_remove(b.get("id", ""))})
                     else:
@@ -200,9 +286,8 @@ class WebUI:
                 if p == "/api/trigger":
                     action = b.get("action", "list")
                     if action == "add":
-                        r = rt.trigger_add(b.get("path", ""), b.get("pattern", "*"),
-                                           b.get("text", ""))
-                        self._json(r)
+                        self._json(rt.trigger_add(b.get("path", ""), b.get("pattern", "*"),
+                                                  b.get("text", "")))
                     elif action == "remove":
                         self._json({"ok": rt.trigger_remove(b.get("id", ""))})
                     else:
@@ -230,6 +315,57 @@ class WebUI:
                     return
                 self._json({"error": "not found"}, 404)
 
+            # ---------- обработчики ----------
+            def _upload(self) -> None:
+                try:
+                    n = int(self.headers.get("Content-Length", 0))
+                except ValueError:
+                    n = 0
+                if n <= 0:
+                    self._json({"ok": False, "error": "пустой файл"}, 400)
+                    return
+                if n > UPLOAD_LIMIT:
+                    self._json({"ok": False, "error": "файл больше 25 МБ"}, 413)
+                    return
+                raw_name = urllib.parse.unquote(self.headers.get("X-File-Name") or "file")
+                name = Path(raw_name).name or "file"
+                name = re.sub(r"[^\w.\-() а-яА-ЯёЁ]+", "_", name)[:120] or "file"
+                data = self.rfile.read(n)
+                if len(data) != n:
+                    self._json({"ok": False, "error": "файл прочитан не полностью"}, 400)
+                    return
+                mime = self.headers.get("Content-Type") or ""
+                if mime.startswith("text/") or "json" in mime:
+                    mime = mimetypes.guess_type(name)[0] or "text/plain"
+                dest_dir = rt.cfg.uploads_dir
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                dest = dest_dir / f"{int(time.time() * 1000)}_{name}"
+                try:
+                    dest.write_bytes(data)
+                except OSError as e:
+                    self._json({"ok": False, "error": f"не удалось сохранить: {e}"}, 500)
+                    return
+                is_image = mime.startswith("image/") or dest.suffix.lower() in IMAGE_EXTS
+                self._json({"ok": True,
+                            "attachment": {"name": name, "path": str(dest),
+                                           "mime": mime or "application/octet-stream",
+                                           "size": n, "is_image": is_image,
+                                           "url": f"/api/files/{dest.name}"}})
+
+            def _send_file(self, path: Path) -> None:
+                if not path.is_file():
+                    self._json({"error": "not found"}, 404)
+                    return
+                ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+                try:
+                    data = path.read_bytes()
+                except OSError:
+                    self._json({"error": "not found"}, 404)
+                    return
+                self._send(200, data, ctype,
+                           {"Cache-Control": "public, max-age=86400",
+                            "Access-Control-Allow-Origin": "*"})
+
             def _last_shot(self) -> None:
                 shots_dir = Path(rt.cfg.state_dir) / "screens"
                 if not shots_dir.exists():
@@ -253,11 +389,11 @@ class WebUI:
                 self.end_headers()
                 client = SSEClient()
                 client.unsub = rt.bus.subscribe(client._on_event)
-                # история для первооткрывателя
-                for ev in rt.bus.history(80):
-                    self.wfile.write(f"data: {ev.to_json()}\n\n".encode("utf-8"))
-                    self.wfile.flush()
+                # короткая история — клиент сам разрулит дубли по pos/message_id
                 try:
+                    for ev in rt.bus.history(60):
+                        self.wfile.write(f"data: {ev.to_json()}\n\n".encode("utf-8"))
+                    self.wfile.flush()
                     while True:
                         try:
                             msg = client.q.get(timeout=15)

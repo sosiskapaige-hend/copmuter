@@ -3,10 +3,15 @@
     "provider": "openai",
     "base_url": "http://localhost:1234/v1",
     "api_key": "",
-    "model": "qwen3-vl-4b-instruct",
-    "max_tokens": 1024,
-    "temperature": 0.2,
+    "model": "qwen3-vl-8b-instruct",
+    "max_tokens": 3072,
+    "temperature": 0.4,
     "supports_tool_calling": true,
     "vision": true
+  },
+  "chat": {
+    "history_messages": 16,
+    "max_message_chars": 8000,
+    "attach_inline_chars": 6000
   }
 }

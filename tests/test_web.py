@@ -121,7 +121,7 @@ class TestWebApi(unittest.IsolatedAsyncioTestCase):
         with urllib.request.urlopen(self.base + "/", timeout=10) as r:
             html = r.read().decode()
         self.assertIn("AI Computer Agent", html)
-        self.assertIn("Создай папку", html) or self.assertIn("Задача", html)
+        self.assertTrue("Создай папку" in html or "Задача" in html)
 
     def test_settings_api(self):
         # GET: текущие настройки

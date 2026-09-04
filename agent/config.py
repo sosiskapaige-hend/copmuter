@@ -51,11 +51,19 @@ class SafetyConfig:
 
 
 @dataclass
+class ChatConfig:
+    history_messages: int = 16        # сколько сообщений уходит в контекст LLM
+    max_message_chars: int = 8000     # максимальная длина одного сообщения в контексте
+    attach_inline_chars: int = 6000   # сколько символов текстового файла вставлять в контекст
+
+
+@dataclass
 class Config:
     agent_home: Path = field(default_factory=lambda: Path.home() / ".ai-computer-agent")
     llm: LLMConfig = field(default_factory=LLMConfig)
     agent: AgentConfig = field(default_factory=AgentConfig)
     safety: SafetyConfig = field(default_factory=SafetyConfig)
+    chat: ChatConfig = field(default_factory=ChatConfig)
     voice: dict = field(default_factory=lambda: {"stt_model": "small", "language": "ru"})
     apps: dict = field(default_factory=dict)
     web_ui: dict = field(default_factory=lambda: {"host": "0.0.0.0", "port": 8710})
@@ -85,9 +93,18 @@ class Config:
     def logs_dir(self) -> Path:
         return self.agent_home / "logs"
 
+    @property
+    def chats_dir(self) -> Path:
+        return self.agent_home / "chats"
+
+    @property
+    def uploads_dir(self) -> Path:
+        return self.agent_home / "uploads"
+
     def ensure_dirs(self) -> None:
         for d in (self.state_dir, self.memory_dir, self.trash_dir,
-                  self.downloads_dir, self.logs_dir):
+                  self.downloads_dir, self.logs_dir, self.chats_dir,
+                  self.uploads_dir):
             d.mkdir(parents=True, exist_ok=True)
 
     # ---------- загрузка ----------
@@ -150,6 +167,11 @@ class Config:
         if _sec("apps"):
             cfg.apps = _sec("apps")
         cfg.web_ui = {**cfg.web_ui, **_sec("web_ui")}
+
+        chat = _sec("chat")
+        for k in ("history_messages", "max_message_chars", "attach_inline_chars"):
+            if k in chat:
+                setattr(cfg.chat, k, int(chat[k]))
 
         if "agent_home" in data:
             cfg.agent_home = Path(os.path.expanduser(str(data["agent_home"])))
