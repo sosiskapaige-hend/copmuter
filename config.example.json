@@ -1,0 +1,43 @@
+{
+  "agent_home": "~/.ai-computer-agent",
+  "llm": {
+    "provider": "openai",
+    "base_url": "https://api.openai.com/v1",
+    "api_key_env": "OPENAI_API_KEY",
+    "model": "gpt-4o",
+    "max_tokens": 1024,
+    "temperature": 0.2,
+    "supports_tool_calling": true,
+    "vision": true
+  },
+  "llm_fallbacks": [],
+  "agent": {
+    "max_iterations": 80,
+    "max_retry_per_action": 3,
+    "assess_every_n_steps": 3,
+    "context_window_messages": 40,
+    "ask_user_timeout": 300,
+    "trash_before_delete": true,
+    "log_level": "INFO"
+  },
+  "safety": {
+    "mode": "confirm",
+    "confirm_from": "medium",
+    "bulk_delete_threshold": 10,
+    "auto_approve_timeout": 0
+  },
+  "voice": {
+    "stt_model": "small",
+    "language": "ru"
+  },
+  "apps": {
+    "vscode": {"win32": "code", "linux": "code"},
+    "chrome": {"win32": "chrome", "linux": "google-chrome"},
+    "explorer": {"win32": "explorer", "linux": "xdg-open"},
+    "terminal": {"win32": "wt", "linux": "gnome-terminal"}
+  },
+  "web_ui": {
+    "host": "0.0.0.0",
+    "port": 8710
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "llm": {
+    "provider": "openai",
+    "base_url": "http://localhost:1234/v1",
+    "api_key": "",
+    "model": "qwen3-vl-4b-instruct",
+    "max_tokens": 1024,
+    "temperature": 0.2,
+    "supports_tool_calling": true,
+    "vision": true
+  }
+}

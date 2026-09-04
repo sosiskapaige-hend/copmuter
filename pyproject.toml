@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-computer-agent"
+version = "0.1.0"
+description = "Универсальный AI-агент, управляющий компьютером через естественный язык: системные инструменты, GUI-управление, браузер, память, планирование, безопасность."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "AI Computer Agent" }]
+dependencies = []
+
+[project.optional-dependencies]
+# GUI / экран / мышь
+gui = ["mss>=9.0", "pyautogui>=0.9.54", "pygetwindow>=0.0.9"]
+# Процессы и диагностика
+sys = ["psutil>=5.9"]
+# Файлы
+files = ["pypdf>=4.0", "pillow>=10.0"]
+# Браузер
+browser = ["playwright>=1.40"]
+# OCR
+ocr = ["pytesseract>=0.3.10", "pillow>=10.0"]
+# UI
+tui = ["textual>=0.50", "rich>=13.0"]
+# Наблюдение за файлами (быстрее опроса)
+watch = ["watchdog>=4.0"]
+# Голос
+voice = ["faster-whisper>=1.0", "sounddevice>=0.4.6"]
+
+[project.scripts]
+ai-agent = "main:main"
+ai-agent-desktop = "desktop:main"
+
+[tool.setuptools.packages.find]
+include = ["agent*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
