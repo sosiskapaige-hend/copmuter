@@ -112,6 +112,31 @@ kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2p
 .btn.primary{background:var(--grad);border:none;color:#04222e;box-shadow:0 2px 12px rgba(14,165,233,.3)}
 .btn.primary:hover{filter:brightness(1.08)}
 .btn svg{width:15px;height:15px}
+.btn.trust{background:linear-gradient(135deg,#065f46,#059669);border-color:#34d399;color:#d1fae5;
+  font-weight:700;box-shadow:0 2px 10px rgba(52,211,153,.25)}
+.btn.trust:hover{filter:brightness(1.12)}
+.btn.trust.on{background:linear-gradient(135deg,#059669,#34d399);color:#04222e;
+  box-shadow:0 0 0 1px rgba(52,211,153,.8), 0 4px 16px rgba(52,211,153,.45);animation:trustpulse 2s infinite}
+@keyframes trustpulse{50%{box-shadow:0 0 0 3px rgba(52,211,153,.18),0 4px 16px rgba(52,211,153,.4)}}
+.voice-chip{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;color:var(--dim);
+  background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:3px 11px;flex-shrink:0;max-width:230px;
+  overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.voice-chip .vdot{width:7px;height:7px;border-radius:50%;background:#64748b;flex-shrink:0}
+.voice-chip.listening .vdot{background:var(--err);box-shadow:0 0 0 0 rgba(251,113,133,.6);animation:vpulse 1.2s infinite}
+.voice-chip.speaking .vdot{background:var(--acc);box-shadow:0 0 8px rgba(34,211,238,.9)}
+.voice-chip.processing .vdot{background:var(--warn);box-shadow:0 0 8px rgba(251,191,36,.7)}
+@keyframes vpulse{70%{box-shadow:0 0 0 8px rgba(251,113,133,0)}100%{box-shadow:0 0 0 0 rgba(251,113,133,0)}}
+.voice-chip button{display:inline-flex;align-items:center;color:var(--dim);width:18px;height:18px;border-radius:5px}
+.voice-chip button:hover{color:var(--err);background:#3b1626}
+.voice-chip button svg{width:12px;height:12px}
+.diag{border:1px solid var(--line);border-radius:11px;margin-bottom:8px;overflow:hidden;background:rgba(3,16,27,.4)}
+.diag-head{display:flex;align-items:center;gap:9px;padding:8px 12px;font-size:13px}
+.diag-head .st{width:9px;height:9px;border-radius:50%;background:#64748b;flex-shrink:0}
+.diag-head .st.ok{background:var(--ok);box-shadow:0 0 8px rgba(52,211,153,.7)}
+.diag-head .st.bad{background:var(--err)}
+.diag-head .st.na{background:var(--warn)}
+.diag-body{display:none;padding:2px 12px 10px;font-size:12.5px;color:var(--dim);border-top:1px dashed var(--line);white-space:pre-wrap}
+.diag.open .diag-body{display:block}
 .only-mobile{display:none}
 
 /* ---------- сообщения ---------- */
@@ -377,6 +402,7 @@ kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2p
           <button data-mode="chat" class="on">Чат</button>
           <button data-mode="agent">Агент</button>
         </div>
+        <button class="btn trust" id="fullBtn" title="Полный доступ: агент делает всё сам и не спрашивает разрешения (даже на критичные действия). Нажмите ещё раз — вернуть подтверждения.">🔓 Авто</button>
         <button class="btn danger hidden" id="stopBtn">Остановить</button>
       </div>
     </header>
@@ -397,6 +423,9 @@ kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2p
       <div class="hints">
         <span>Enter — отправить · Shift+Enter — новая строка</span>
         <span id="agentHint" class="hidden">Агент будет выполнять действия на этом компьютере</span>
+        <span class="voice-chip hidden" id="voiceChip" title="Состояние голосового управления">
+          <span class="vdot"></span><span id="voiceChipText">голос</span>
+        </span>
       </div>
     </div>
   </main>
@@ -412,8 +441,10 @@ kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2p
       <nav class="tabs" id="tabs">
         <button data-tab="model" class="on">Модель</button>
         <button data-tab="agent">Агент</button>
+        <button data-tab="voice">Голос</button>
         <button data-tab="memory">Память</button>
         <button data-tab="auto">Автоматизация</button>
+        <button data-tab="diag">Диагностика</button>
         <button data-tab="journal">Журнал</button>
       </nav>
       <div class="tab-panels">
@@ -459,13 +490,17 @@ kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2p
           <div class="fld">
             <label>Режим подтверждения действий</label>
             <select id="agentModeSel">
-              <option value="auto">Авто — делать всё самому</option>
+              <option value="full">🔓 Полный доступ — никогда не спрашивать</option>
+              <option value="auto">Авто — делать всё самому (критичное спросит)</option>
               <option value="confirm" selected>Подтверждение — спрашивать при среднем+ риске</option>
               <option value="step">Пошагово — спрашивать перед каждым действием</option>
               <option value="observe">Наблюдение — автономно, всё показывать</option>
               <option value="plan_only">Только план — ничего не выполнять</option>
             </select>
             <div class="mode-desc" id="modeDesc"></div>
+            <div class="note" style="margin-top:6px">🔓 «Полный доступ» — агент выполняет команды без единого вопроса,
+              даже критические. Включается и кнопкой <b>«🔓 Авто»</b> вверху справа. Любое изменение можно
+              откатить кнопкой «↩ Отменить последнее».</div>
           </div>
           <h3 style="font-size:13px;color:var(--dim);margin:18px 0 8px">Система</h3>
           <div class="kv"><span>CPU</span><b id="sCpu">—</b></div>
@@ -511,6 +546,69 @@ kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2p
             <button class="btn" onclick="trigAdd()">＋</button>
           </div>
           <ul class="list" id="trigList"></ul>
+        </section>
+
+        <section data-panel="voice">
+          <div class="note" style="margin-bottom:14px">🎙 Полноценное голосовое управление: говорите — ассистент
+            отвечает голосом. Глобальные хоткеи работают, даже когда вы в другом приложении.
+            Команды вида «<b>Джарвис, создай папку на рабочем столе</b>» выполняются без единого нажатия.</div>
+          <div class="fld"><label class="chk" style="padding:2px 0">
+            <input type="checkbox" id="vReply"> Озвучивать ответы ассистента голосом</label></div>
+          <div class="fld"><label class="chk" style="padding:2px 0">
+            <input type="checkbox" id="vAutoSend"> Отправлять распознанную речь сразу (без Enter)</label></div>
+          <div class="fld"><label class="chk" style="padding:2px 0">
+            <input type="checkbox" id="vSendAgent"> Голосовые команды выполнять в режиме «Агент» (действия на ПК)</label></div>
+          <div class="row2">
+            <div class="fld"><label>Глобальный хоткей микрофона (в любом приложении)</label>
+              <input id="vHotkey" placeholder="ctrl+alt+m" spellcheck="false"></div>
+            <div class="fld"><label>Хоткей в окне приложения</label>
+              <input id="vAppHotkey" placeholder="ctrl+shift+m" spellcheck="false"></div>
+          </div>
+          <div class="fld" style="margin-top:4px">
+            <label class="chk" style="padding:2px 0"><input type="checkbox" id="vGlobal">
+              Глобальные хоткеи включены (нужна библиотека keyboard: pip install keyboard)</label>
+          </div>
+          <div style="border-top:1px dashed var(--line);margin:14px 0"></div>
+          <div class="fld"><label class="chk" style="padding:2px 0">
+            <input type="checkbox" id="vWake"> Wake-word «Джарвис»: постоянно слушать и выполнять голосовые команды</label></div>
+          <div class="row2">
+            <div class="fld"><label>Слово-активатор</label><input id="vWakeWord" spellcheck="false"></div>
+            <div class="fld"><label>Модель распознавания (Whisper)</label>
+              <select id="vSttModel">
+                <option value="tiny">tiny — быстро</option>
+                <option value="base">base</option>
+                <option value="small" selected>small — точнее</option>
+                <option value="medium">medium</option>
+                <option value="large-v3">large-v3 — максимум</option>
+              </select></div>
+          </div>
+          <div class="fld"><label>Язык распознавания</label>
+            <select id="vLang"><option value="ru">русский</option><option value="en">English</option>
+            <option value="auto">авто</option></select></div>
+          <div class="fld"><label>Режим выполнения голосовых команд</label>
+            <select id="vCmdMode">
+              <option value="full">🔓 Полный доступ — без вопросов</option>
+              <option value="auto">Авто (критичное спросит)</option>
+              <option value="confirm">С подтверждениями</option>
+            </select></div>
+          <div class="status-line" id="vStatus"></div>
+          <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
+            <button class="btn primary" id="vSave" style="justify-content:center">Сохранить голосовые настройки</button>
+            <button class="btn" id="vGvRestart">Перезапустить глобальный слушатель</button>
+          </div>
+          <div class="note" style="margin-top:12px">STT/запись: <span id="vMicInfo">…</span> ·
+            Озвучка: <span id="vTtsInfo">…</span> ·
+            Хоткеи: <span id="vKbInfo">…</span></div>
+        </section>
+
+        <section data-panel="diag">
+          <div class="note" style="margin-bottom:14px">🖥 Проверка: что агент реально может на этом компьютере.
+            «Мышь/клавиатура: да» означает, что он может кликать, печатать и двигать курсор.
+            Если чего-то нет — подсказка скажет, что доустановить.</div>
+          <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+            <button class="btn" id="diagRun" style="justify-content:center">Проверить ещё раз (с тестами)</button>
+          </div>
+          <div id="diagList" class="status-line" style="white-space:normal">загружаю…</div>
         </section>
 
         <section data-panel="journal">
@@ -678,6 +776,7 @@ const S={
   messages:[],
   mode:localStorage.getItem("aca.mode")||"chat",
   agentMode:"confirm",
+  prevAgentMode:"confirm",      // режим до включения «🔓 Полный доступ»
   generating:false,
   sending:false,
   attachments:[],          // {name,size,mime,is_image,file,previewUrl}
@@ -995,14 +1094,36 @@ function updateGenUi(){
 $("sendBtn").onclick=()=>{ S.generating?stopGen():send(); };
 $("stopBtn").onclick=stopGen;
 async function stopGen(){
-  if(!S.currentId) return;
-  try{ await api("/api/chat/stop",{chat_id:S.currentId}); }catch(e){}
+  // Кнопка «Стоп» должна срабатывать всегда и сразу, с первого нажатия.
+  // 1) локально снимаем состояние генерации (не ждём SSE);
+  // 2) останавливаем голос/запись, если они активны;
+  // 3) шлём стоп на сервер (если чат ещё не создан — повторим, когда узнаем id).
+  stopRequested=true;
+  stopSpeech();
+  if(voiceState.listening){ setMic(false); try{ rec&&rec.stop(); }catch(e){} }
+  if(voiceState.processing){ toast("распознавание остановить нельзя — дождитесь…"); }
+  if(S.generating||S.currentId){
+    S.generating=false;
+    updateGenUi();
+  }
+  const cid=S.currentId;
+  if(cid){
+    try{ const r=await api("/api/chat/stop",{chat_id:cid}); if(r&&r.ok) stopRequested=false; }catch(e){}
+  }
+  // чата ещё нет (POST /api/chat/send в полёте) — остановим, как только узнаем id
+  if(!cid) setTimeout(async()=>{
+    if(stopRequested&&S.currentId){
+      try{ const r=await api("/api/chat/stop",{chat_id:S.currentId}); if(r&&r.ok) stopRequested=false; }catch(e){}
+    }
+    if(stopRequested) setTimeout(()=>{ stopRequested=false; },4000);
+  },700);
 }
 
 async function send(){
   if(S.generating||S.sending) return;
   const text=$("input").value.trim();
   if(!text&&!S.attachments.length) return;
+  if(voiceState.listening){ setMic(false); try{ rec&&rec.stop(); }catch(e){} }
   S.sending=true;
   const myAtts=S.attachments.slice();
   $("input").value=""; autosize(); updateSendBtn();
@@ -1058,6 +1179,13 @@ async function send(){
   setTitle(r.title||S.title);
   renderMessages();
   refreshChats();
+  // если ждали стоп до создания чата — останавливаем сразу
+  if(stopRequested){
+    stopRequested=false;
+    try{ await api("/api/chat/stop",{chat_id:S.currentId}); }catch(e){}
+  } else if(V.reply){
+    echoNextReply=true;   // озвучить ответ на сообщение, отправленное с этой страницы
+  }
 }
 
 /* ================= SSE ================= */
@@ -1100,6 +1228,11 @@ function handleEvent(ev){
       adoptChat(d.chat_id);
       ensureMsg(d.message_id,d.agent);
       S.generating=true; updateGenUi();
+      // стоп нажали до того, как сервер успел создать чат — останавливаем сразу
+      if(stopRequested){
+        stopRequested=false;
+        api("/api/chat/stop",{chat_id:d.chat_id}).catch(()=>{});
+      }
       break;
     }
     case "chat_delta":{
@@ -1128,6 +1261,11 @@ function handleEvent(ev){
       updateGenUi();
       finalizeStreamNode(m);
       refreshChats(true);
+      // голосовой ответ на сообщение, отправленное с этой страницы
+      if(echoNextReply&&d.chat_id===S.currentId){
+        echoNextReply=false;
+        if(V.reply&&m.content&&!m.error&&!stopRequested) speakText(m.content);
+      }
       break;
     }
     case "chat_activity":{
@@ -1154,6 +1292,34 @@ function handleEvent(ev){
     case "chats_changed": refreshChats(true); break;
     case "confirm_request": showAgentDialog("confirm",d); break;
     case "user_ask": showAgentDialog("ask",d); break;
+    // -------- глобальный голос (сервер) --------
+    case "voice_state":{
+      // показываем состояние серверного слушателя, если страница молчит
+      if(!voiceState.listening&&!voiceState.processing&&!voiceState.speaking){
+        const st=d.state||"idle";
+        if(st==="listening"||st==="processing"||st==="speaking"){
+          const chip=$("voiceChip"),txt=$("voiceChipText");
+          chip.classList.remove("hidden");
+          chip.classList.toggle("listening",st==="listening");
+          chip.classList.toggle("processing",st==="processing");
+          chip.classList.toggle("speaking",st==="speaking");
+          txt.textContent=st==="listening"?"слушает сервер (Джарвис)…"
+            :st==="speaking"?"сервер озвучивает ответ…":"сервер распознаёт…";
+        } else setVoiceChip();
+      }
+      break;
+    }
+    case "voice_heard":{
+      toast("🎙 Команда принята: «"+(d.text||"").slice(0,70)+"»");
+      if(d.chat_id&&d.chat_id!==S.currentId){ S.unwatched.add(d.chat_id); refreshChatsThrottled(); }
+      break;
+    }
+    case "voice_wake": toast("🗣 «"+(d.command||"").slice(0,60)+"» — выполняю…","ok"); break;
+    case "voice_reply":{
+      // сервер сам озвучил ответ (хоткей/Джарвис вне окна)
+      if(d.error) toast("⚠️ "+String(d.text||"").slice(0,120),"bad");
+      break;
+    }
   }
 }
 let refreshChatsTimer=null;
@@ -1243,48 +1409,232 @@ $("attachRow").addEventListener("click",e=>{
   if(rm){ S.attachments.splice(+rm.dataset.rm,1); renderAttachRow(); }
 });
 
-/* ================= голос ================= */
+/* ================= голос: полный цикл (ввод + ответ голосом) ================= */
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-let rec=null, listening=false, voiceBase="";
-if(SR){
-  rec=new SR(); rec.lang="ru-RU"; rec.interimResults=true; rec.maxAlternatives=1;
-  rec.onresult=e=>{
-    let fin="",inter="";
-    for(let i=0;i<e.results.length;i++){
-      const t=e.results[i][0].transcript;
-      if(e.results[i].isFinal) fin+=t+" "; else inter+=t;
-    }
-    $("input").value=(voiceBase+" "+fin+inter).replace(/\s+/g," ").trimStart();
-    autosize(); updateSendBtn();
-  };
-  rec.onend=()=>{ listening=false; $("micBtn").classList.remove("rec"); };
-  rec.onerror=ev=>{
-    listening=false; $("micBtn").classList.remove("rec");
-    if(ev.error==="not-allowed"||ev.error==="service-not-allowed")
-      toast("микрофон запрещён в браузере — разрешите доступ","bad");
-  };
+const voiceState={listening:false,speaking:false,processing:false,serverBusy:false};
+let rec=null, voiceBase="", speechVoice=null, curUtter=null;
+// Настройки голоса (обновляются из /api/voice)
+const V={
+  reply:false, autoSend:true, sendAgent:true, globalEnabled:true,
+  hotkey:"ctrl+alt+m", appHotkey:"ctrl+shift+m",
+  wakeEnabled:false, wakeWord:"джарвис", sttModel:"small", lang:"ru",
+  cmdMode:"auto", caps:{}      // возможности сервера
+};
+// Озвучивать ответ будем только на сообщения, инициированные ЭТОЙ страницей
+// (глобальные команды «Джарвис/хоткей» озвучивает сам сервер, чтобы не было эха).
+let echoNextReply=false, stopRequested=false;
+function setMic(rec){
+  voiceState.listening=rec;
+  $("micBtn").classList.toggle("rec",rec);
+  $("micBtn").title=rec?"Остановить запись · "+V.appHotkey:"Голосовой ввод · "+V.appHotkey;
+  setVoiceChip();
+}
+function setVoiceChip(){
+  const chip=$("voiceChip"), txt=$("voiceChipText");
+  if(!chip) return;
+  const listening=voiceState.listening, speaking=voiceState.speaking, proc=voiceState.processing;
+  if(listening||speaking||proc) chip.classList.remove("hidden");
+  else { chip.classList.add("hidden"); return; }
+  chip.classList.toggle("listening",listening);
+  chip.classList.toggle("speaking",speaking);
+  chip.classList.toggle("processing",proc);
+  txt.textContent=listening?"слушаю… (нажмите 🎤 или "+V.appHotkey+" для остановки)"
+    :speaking?"ассистент говорит…":proc?"распознаю…":"голос";
+}
+function chipBtn(){
+  return `<button title="Остановить" id="voiceChipStop">${I.stop}</button>`;
+}
+function initSpeechVoice(){
+  if(!window.speechSynthesis) return;
+  function pick(){
+    const vs=window.speechSynthesis.getVoices();
+    if(!vs.length) return;
+    let v=vs.find(x=>/ru[-_]RU/i.test(x.lang)&&/female|irina|svetlana|dariya/i.test(x.name))
+      ||vs.find(x=>/ru[-_]RU/i.test(x.lang))
+      ||vs.find(x=>/^(ru|en)/i.test(x.lang));
+    if(v) speechVoice=v;
+  }
+  pick();
+  window.speechSynthesis.onvoiceschanged=pick;
+}
+function stopSpeech(){
+  if(window.speechSynthesis){ try{ window.speechSynthesis.cancel(); }catch(e){} }
+  curUtter=null; voiceState.speaking=false; setVoiceChip();
+}
+function speakText(text){
+  if(!V.reply||!text) return;
+  if(!window.speechSynthesis){ toast("браузер не умеет синтез речи","bad"); return; }
+  stopSpeech();
+  const clean=text.replace(/```[\s\S]*?```/g," ")
+    .replace(/`([^`]*)`/g,"$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g,"$1")
+    .replace(/[*_#>|]/g," ")
+    .replace(/https?:\/\/\S+/g,"ссылка")
+    .replace(/\s+/g," ").trim();
+  if(!clean) return;
+  voiceState.speaking=true; setVoiceChip();
+  const u=new SpeechSynthesisUtterance(clean.slice(0,900));
+  u.lang=speechVoice?speechVoice.lang:"ru-RU";
+  if(speechVoice) u.voice=speechVoice;
+  u.rate=1.02;
+  u.onend=()=>{ voiceState.speaking=false; setVoiceChip(); };
+  u.onerror=()=>{ voiceState.speaking=false; setVoiceChip(); };
+  curUtter=u;
+  window.speechSynthesis.speak(u);
+}
+async function loadVoiceInfo(){
+  try{
+    const r=await api("/api/voice");
+    if(!r||!r.config) return;
+    const c=r.config||{};
+    V.reply=!!c.reply; V.autoSend=c.autoSend!==false; V.sendAgent=c.sendAgent!==false;
+    V.globalEnabled=c.globalEnabled!==false;
+    V.hotkey=c.hotkey||"ctrl+alt+m"; V.appHotkey=c.appHotkey||"ctrl+shift+m";
+    V.wakeEnabled=!!c.wake_enabled; V.wakeWord=c.wake_word||"джарвис";
+    V.sttModel=c.stt_model||"small"; V.lang=c.language||"ru"; V.cmdMode=c.mode||"auto";
+    V.caps={stt:!!r.stt,tts:!!r.tts,ttsProvider:r.tts_provider||"",
+      kb:!!r.can_hotkeys,hotkey:r.hotkey||V.hotkey,state:r.state||"idle",
+      wake:!!r.wake_enabled};
+    fillVoiceForm(); refreshMicTitle();
+  }catch(e){}
+}
+function refreshMicTitle(){
+  const b=$("micBtn"); if(b) b.title="Голосовой ввод · "+V.appHotkey;
 }
 function toggleVoice(){
-  if(listening){ rec&&rec.stop(); return; }
-  if(rec){
-    voiceBase=$("input").value?$("input").value.trim()+" ":"";
-    listening=true; $("micBtn").classList.add("rec");
-    try{ rec.start(); }catch(e){ listening=false; $("micBtn").classList.remove("rec"); }
-  } else serverStt();
+  // если ассистент говорит — сначала остановить озвучку
+  if(voiceState.speaking){ stopSpeech(); if(!voiceState.listening) return; }
+  if(voiceState.listening){
+    // повторное нажатие — остановить распознавание
+    if(rec){ try{ rec.stop(); }catch(e){} }
+    else voiceState.listening=false; setMic(false);
+    return;
+  }
+  if(voiceState.processing) return;
+  if(rec){ startBrowserListen(); } else { serverStt(); }
+}
+function startBrowserListen(){
+  if(!rec){ toast("распознавание речи в этом браузере недоступно — использую локальный Whisper…"); serverStt(); return; }
+  voiceBase=$("input").value?$("input").value.trim()+" ":"";
+  setMic(true);
+  try{ rec.start(); }catch(e){ setMic(false); toast("не удалось запустить микрофон: "+e,"bad"); }
+}
+async function finishVoiceText(text){
+  text=(text||"").replace(/\s+/g," ").trim();
+  if(!text) return;
+  if(V.autoSend){
+    stopSpeech();
+    const useAgent=V.sendAgent||S.mode==="agent";
+    await voiceSubmit(text,useAgent);
+  } else {
+    $("input").value=text; autosize(); updateSendBtn();
+    toast("распознано. Нажмите Enter, чтобы отправить","ok");
+  }
+}
+async function voiceSubmit(text,useAgent){
+  if(S.generating||S.sending){ toast("сейчас занят — дождитесь ответа","bad"); return null; }
+  const serverAtts=[];
+  const localMsg={id:"local-v"+Date.now(),role:"user",content:text,streaming:false,attachments:[]};
+  S.messages.push(localMsg); renderMessages(); S.stick=true; scrollBottom(true);
+  S.generating=true; updateGenUi();
+  let r;
+  try{
+    r=await api("/api/chat/send",{chat_id:S.currentId,text,attachments:serverAtts,
+      agent:useAgent,mode:useAgent?(V.cmdMode||S.agentMode):""});
+  }catch(e){ S.generating=false; updateGenUi(); toast("сервер недоступен: "+e,"bad"); return null; }
+  if(!r.ok){
+    S.messages.pop(); S.generating=false; updateGenUi(); renderMessages();
+    toast(r.error||"не удалось отправить","bad"); return null;
+  }
+  localMsg.id=r.user&&r.user.id?r.user.id:localMsg.id;
+  S.currentId=r.chat_id; setTitle(r.title||S.title);
+  renderMessages(); refreshChats();
+  if(stopRequested){
+    stopRequested=false;
+    try{ await api("/api/chat/stop",{chat_id:S.currentId}); }catch(e){}
+  } else if(V.reply){
+    echoNextReply=true;
+  }
+  return r;
 }
 async function serverStt(){
-  toast("слушаю (локальный Whisper, ~8 с)…");
+  voiceState.processing=true; setVoiceChip();
+  toast("слушаю… (локальный Whisper, говорите; запись остановится по тишине)");
   try{
-    const r=await api("/api/stt",{seconds:8});
-    if(r.ok&&r.text){ $("input").value=r.text; autosize(); updateSendBtn(); toast("распознано: "+r.text.slice(0,60)); }
+    const r=await api("/api/stt",{seconds:20});
+    if(r.ok&&r.text){
+      voiceState.processing=false; setVoiceChip();
+      await finishVoiceText(r.text);
+    }
     else toast(r.error||"не удалось распознать","bad");
   }catch(e){ toast("STT недоступен: "+e,"bad"); }
+  finally{ voiceState.processing=false; setVoiceChip(); }
 }
+if(SR){
+  try{
+    rec=new SR(); rec.lang="ru-RU"; rec.interimResults=true; rec.maxAlternatives=1;
+    rec.onresult=e=>{
+      if(!voiceState.listening) return;
+      let fin="",inter="";
+      for(let i=0;i<e.results.length;i++){
+        const t=e.results[i][0].transcript;
+        if(e.results[i].isFinal) fin+=t+" "; else inter+=t;
+      }
+      const full=(voiceBase+" "+fin+inter).replace(/\s+/g," ").trimStart();
+      $("input").value=full; autosize();
+      if(!fin.trim()) return;   // пока только промежуточный текст — ждём финал
+      const text=(voiceBase+" "+fin).replace(/\s+/g," ").trim();
+      setMic(false);
+      try{ rec.stop(); }catch(e){}
+      if(V.autoSend){ finishVoiceText(text); }
+      else{ $("input").value=text; autosize(); updateSendBtn(); toast("распознано","ok"); }
+    };
+    rec.onend=()=>{ setMic(false); };
+    rec.onerror=ev=>{
+      setMic(false);
+      if(ev.error==="not-allowed"||ev.error==="service-not-allowed")
+        toast("микрофон запрещён в браузере — разрешите доступ","bad");
+      else if(ev.error==="no-speech") toast("не расслышал — попробуйте ещё раз");
+      else if(ev.error&&ev.error!=="aborted") toast("ошибка микрофона: "+ev.error,"bad");
+    };
+  }catch(e){ rec=null; }
+}
+initSpeechVoice();
 $("micBtn").onclick=toggleVoice;
+function hotkeySpec(h){
+  if(!h) return null;
+  const parts=String(h).toLowerCase().split(/[\s+]+/).filter(Boolean);
+  const m={ctrl:false,shift:false,alt:false,meta:false}; let key=null;
+  for(const p of parts){
+    if(p==="ctrl"||p==="control") m.ctrl=true;
+    else if(p==="shift") m.shift=true;
+    else if(p==="alt"||p==="option") m.alt=true;
+    else if(p==="meta"||p==="cmd"||p==="win"||p==="windows") m.meta=true;
+    else if(!key) key=p;
+  }
+  return {mods:m,key:key||""};
+}
+function hotkeyHit(e,spec){
+  if(!spec) return false;
+  const m=spec.mods;
+  if(!!e.ctrlKey!==m.ctrl||!!e.shiftKey!==m.shift||!!e.altKey!==m.alt||!!e.metaKey!==m.meta) return false;
+  const k=(spec.key||"").toLowerCase();
+  const code=(e.code||"").toLowerCase(), key=(e.key||"").toLowerCase();
+  if(k.length===1&&/^[a-z]$/.test(k)) return code==="key"+k;
+  if(/^[0-9]$/.test(k)) return code==="digit"+k||key===k;
+  if(/^f([1-9]|1[0-2])$/.test(k)) return code===k;
+  if(k==="space") return code==="space";
+  if(k==="enter") return code==="enter";
+  if(k==="escape") return code==="escape";
+  if(k==="tab") return code==="tab";
+  return key===k||code===k;
+}
+const APP_HK=()=>hotkeySpec(V.appHotkey||"ctrl+shift+m");
 document.addEventListener("keydown",e=>{
-  if(e.ctrlKey&&e.shiftKey&&e.code==="KeyM"){ e.preventDefault(); toggleVoice(); }
-  if(e.ctrlKey&&e.code==="KeyK"&&!e.shiftKey){ e.preventDefault(); newChat(); }
+  if(hotkeyHit(e,APP_HK())){ e.preventDefault(); toggleVoice(); return; }
+  if(e.ctrlKey&&!e.shiftKey&&!e.altKey&&!e.metaKey&&(e.code==="KeyK")){ e.preventDefault(); newChat(); return; }
   if(e.key==="Escape"){
+    if(voiceState.speaking||voiceState.listening){ stopSpeech(); setMic(false); return; }
     if(dlgCtx) closeDialog(false);
     else if($("settingsOverlay").classList.contains("show")) showOverlay("settingsOverlay",false);
   }
@@ -1309,6 +1659,7 @@ if(localStorage.getItem("aca.side")==="0"&&!mobile()) $("sidebar").classList.add
 /* ================= настройки ================= */
 $("settingsBtn").onclick=async()=>{
   await loadSettings(); loadAgentTab(); loadMem(); loadSched(); loadJournal(); loadSys();
+  await loadVoiceInfo();          // заполнить форму «Голос» и статусы
   showOverlay("settingsOverlay",true);
 };
 $("modelChip").onclick=()=>$("settingsBtn").click();
@@ -1321,25 +1672,55 @@ $("tabs").addEventListener("click",e=>{
   document.querySelectorAll("#tabs button").forEach(x=>x.classList.toggle("on",x===b));
   document.querySelectorAll(".tab-panels section").forEach(s=>
     s.classList.toggle("on",s.dataset.panel===b.dataset.tab));
+  if(b.dataset.tab==="diag") loadDiag(false);
+  if(b.dataset.tab==="voice"){ fillVoiceForm(); }
 });
 const MODE_DESC={
+  full:"🔓 ПОЛНЫЙ доступ: агент выполняет всё сам и НИКОГДА не спрашивает. Откат — кнопкой «↩».",
   auto:"Агент работает автономно, спрашивает только критичное и массовые операции.",
   confirm:"Действия со средним риском и выше требуют подтверждения (окно в чате).",
   step:"Перед каждым действием агент просит разрешения.",
   observe:"Автономно, но все действия транслируются в чат.",
   plan_only:"Агент только составит план — ничего не выполнит."
 };
+function syncFullBtn(){
+  const on=S.agentMode==="full";
+  const b=$("fullBtn");
+  b.classList.toggle("on",on);
+  b.textContent=on?"🔓 Авто: полный доступ":"🔓 Авто";
+  b.title=on?"Полный доступ ВКЛЮЧЁН — агент не спрашивает. Нажмите, чтобы вернуть подтверждения."
+    :"Включить полный доступ: агент действует сам и не спрашивает разрешения.";
+}
+async function applyAgentMode(mode,silent){
+  S.agentMode=mode;
+  $("agentModeSel").value=mode;
+  $("modeDesc").textContent=MODE_DESC[mode]||"";
+  syncFullBtn();
+  if(mode!=="full") S.prevAgentMode=mode;
+  if(!silent) await api("/api/mode",{mode});
+}
+$("fullBtn").onclick=async()=>{
+  if(S.agentMode==="full"){
+    await applyAgentMode(S.prevAgentMode!=="full"?S.prevAgentMode:"confirm",false);
+    toast("Подтверждения возвращены: "+MODE_DESC[S.agentMode]?.slice(0,60),"ok");
+  }else{
+    S.prevAgentMode=S.agentMode||"confirm";
+    await applyAgentMode("full",false);
+    toast("🔓 Полный доступ включён — агент больше не спрашивает разрешения","ok");
+  }
+};
 $("agentModeSel").addEventListener("change",async e=>{
-  S.agentMode=e.target.value;
-  $("modeDesc").textContent=MODE_DESC[S.agentMode]||"";
-  await api("/api/mode",{mode:S.agentMode});
+  await applyAgentMode(e.target.value,false);
+  if(e.target.value!=="full") toast("Режим: "+MODE_DESC[e.target.value]?.slice(0,70));
 });
 async function loadAgentTab(){
   try{
     const s=await api("/api/state");
     S.agentMode=s.mode||"confirm";
+    if(S.agentMode!=="full") S.prevAgentMode=S.agentMode;
     $("agentModeSel").value=S.agentMode;
     $("modeDesc").textContent=MODE_DESC[S.agentMode]||"";
+    syncFullBtn();
   }catch(e){}
 }
 async function loadSys(){
@@ -1476,6 +1857,98 @@ async function ctrl(a){
   if(r.ok) toast("выполнено: "+a);
 }
 
+/* ================= вкладка «Голос» ================= */
+function fillVoiceForm(){
+  $("vReply").checked=V.reply;
+  $("vAutoSend").checked=V.autoSend;
+  $("vSendAgent").checked=V.sendAgent;
+  $("vGlobal").checked=V.globalEnabled;
+  $("vHotkey").value=V.hotkey||"";
+  $("vAppHotkey").value=V.appHotkey||"";
+  $("vWake").checked=V.wakeEnabled;
+  $("vWakeWord").value=V.wakeWord||"джарвис";
+  $("vSttModel").value=V.sttModel||"small";
+  $("vLang").value=V.lang||"ru";
+  $("vCmdMode").value=V.cmdMode||"auto";
+  const mic=$("vMicInfo"),tts=$("vTtsInfo"),kb=$("vKbInfo");
+  if(mic) mic.textContent=V.caps.stt?"✅ локальный Whisper":"❌ нет (pip install faster-whisper sounddevice numpy)";
+  if(tts) tts.textContent=V.caps.tts?("✅ "+(V.caps.ttsProvider||"локальный")):"❌ нет";
+  if(kb) kb.textContent=V.caps.kb?("✅ клавиша «"+(V.caps.hotkey||V.hotkey)+"»"):"❌ нет (pip install keyboard)";
+}
+async function saveVoiceSettings(){
+  const body={voice:{
+    reply:$("vReply").checked,
+    auto_send:$("vAutoSend").checked,
+    send_agent:$("vSendAgent").checked,
+    global_enabled:$("vGlobal").checked,
+    hotkey:$("vHotkey").value.trim()||"ctrl+alt+m",
+    app_hotkey:$("vAppHotkey").value.trim()||"ctrl+shift+m",
+    wake_enabled:$("vWake").checked,
+    wake_word:$("vWakeWord").value.trim()||"джарвис",
+    stt_model:$("vSttModel").value,
+    language:$("vLang").value,
+    mode:$("vCmdMode").value
+  }};
+  const st=$("vStatus"); st.className="status-line"; st.textContent="сохраняю…";
+  const r=await api("/api/voice/settings",body);
+  if(r&&r.ok){
+    await loadVoiceInfo();
+    st.className="status-line ok";
+    st.textContent="✅ Голосовые настройки сохранены и применены";
+    toast("Голосовые настройки сохранены","ok");
+  }else{
+    st.className="status-line bad";
+    st.textContent="ошибка: "+((r&&r.error)||"неизвестно");
+  }
+}
+$("vSave").onclick=saveVoiceSettings;
+$("vGvRestart").onclick=async()=>{
+  const st=$("vStatus"); st.className="status-line"; st.textContent="перезапускаю глобальный слушатель…";
+  const r=await api("/api/voice/global",{action:"restart"});
+  await loadVoiceInfo();
+  st.className=r&&r.ok?"status-line ok":"status-line bad";
+  st.textContent=(r&&r.ok)
+    ?"✅ Глобальный слушатель запущен"+(V.caps.wake?" (Джарвис слушает)":"")
+    :"глобальный слушатель недоступен — см. подсказки ниже";
+};
+
+/* ================= вкладка «Диагностика» ================= */
+function diagIcon(ok){
+  if(ok===true) return '<span class="st ok"></span>';
+  if(ok===false) return '<span class="st bad"></span>';
+  return '<span class="st na"></span>';
+}
+async function loadDiag(runTests){
+  const box=$("diagList");
+  box.className="status-line";
+  box.textContent=runTests?"запускаю тесты (скриншот, терминал, окна)…":"проверяю возможности…";
+  try{
+    const url=runTests?"/api/selfcheck/run":"/api/selfcheck";
+    const r=await api(url);
+    if(!r||!r.checks){ box.textContent="нет данных от сервера"; return; }
+    const items=r.checks.map(c=>
+      `<div class="diag"><div class="diag-head">${diagIcon(c.ok)}<b style="flex:1">${esc(c.name)}</b>`+
+      `<span style="color:${c.ok===false?"var(--err)":c.ok?"var(--ok)":"var(--warn)"}">${c.ok===false?"нет":c.ok?"да":"н/д"}</span></div>`+
+      `<div class="diag-body">${esc(c.detail||"")}${c.hint?"\n→ "+esc(c.hint):""}</div></div>`).join("");
+    const tests=(r.tests||[]).map(t=>
+      `<div class="diag"><div class="diag-head">${diagIcon(t.ok)}<b style="flex:1">${esc(t.name)}</b>`+
+      `<span style="color:${t.ok===false?"var(--err)":t.ok?"var(--ok)":"var(--warn)"}">${t.ok===false?"ошибка":t.ok?"ok":"пропущено"}</span></div>`+
+      `<div class="diag-body">${esc(t.detail||"")}</div></div>`).join("");
+    box.className="status-line";
+    box.innerHTML=items+tests+
+      `<div class="note" style="margin-top:10px">Дисплей: ${r.has_display?"✅ есть":"❌ нет (headless)"} · `+
+      `ОС: ${esc(r.system||"")} · Мониторы: ${(r.monitors||[]).length} · `+
+      `Инструментов: ${r.checks?r.checks.length:0} проверок`+(r.platform?"\n\n"+esc(r.platform):"")+
+      `<br><br>Попробуйте сами: напишите агенту «открой блокнот», «кликни в центр экрана», `+
+      `«сделай скриншот и опиши» — в режиме <b>Агент</b>.</div>`;
+    box.style.whiteSpace="pre-wrap";
+  }catch(e){
+    box.className="status-line bad";
+    box.textContent="сервер недоступен: "+e;
+  }
+}
+$("diagRun").onclick=()=>loadDiag(true);
+
 /* ================= строка модели ================= */
 function refreshModelLine(){
   const name=$("modelName").textContent;
@@ -1511,6 +1984,8 @@ async function initModelName(){
 /* ================= запуск ================= */
 setMode(S.mode);
 initModelName();
+loadAgentTab();       // режим (в т.ч. «🔓 Полный доступ») + кнопка
+loadVoiceInfo();      // голосовые настройки (озвучка, хоткеи, wake-word)
 refreshChats();
 renderMessages();
 connectSSE();

@@ -12,6 +12,17 @@ from pathlib import Path
 from typing import Any
 
 
+def _deep_merge(base: dict, overlay: dict) -> dict:
+    """Рекурсивно сливает overlay в base (новые ключи не теряются)."""
+    out = dict(base)
+    for k, v in overlay.items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
 def _env(key: str, default: Any = None) -> Any:
     v = os.environ.get(key)
     return v if v not in (None, "") else default
@@ -61,6 +72,27 @@ class ChatConfig:
     attach_inline_chars: int = 6000   # сколько символов текстового файла вставлять в контекст
 
 
+VOICE_DEFAULTS: dict = {
+    "stt_model": "small",          # tiny | base | small | medium | large-v3 (локальный Whisper)
+    "language": "ru",
+    # Голосовой диалог в UI
+    "reply": False,                # озвучивать ответы ассистента (голосом)
+    "auto_send": True,             # после распознавания отправлять сразу (без нажатия Enter)
+    "send_agent": True,            # голосовые команды исполнять в режиме «Агент» (действия на ПК)
+    "mode": "auto",                # режим безопасности для голосовых команд (auto/full/confirm/...)
+    # Глобальное управление (работает, даже когда пользователь в другом приложении)
+    "global_enabled": True,        # регистрировать глобальные хоткеи, если библиотека доступна
+    "hotkey": "ctrl+alt+m",        # глобальный хоткей «активировать микрофон»
+    "app_hotkey": "ctrl+shift+m",  # хоткей внутри окна приложения
+    # Wake-word «Джарвис»: постоянно слушать и выполнять команды голосом
+    "wake_enabled": False,
+    "wake_word": "джарвис",
+    "wake_aliases": ["джарвис", "жарвис", "jarvis"],
+    "vad_silence": 1.2,            # сек тишины, чтобы считать фразу законченной
+    "vad_max_seconds": 20,         # максимум записи одной фразы
+}
+
+
 @dataclass
 class Config:
     agent_home: Path = field(default_factory=lambda: Path.home() / ".ai-computer-agent")
@@ -68,9 +100,11 @@ class Config:
     agent: AgentConfig = field(default_factory=AgentConfig)
     safety: SafetyConfig = field(default_factory=SafetyConfig)
     chat: ChatConfig = field(default_factory=ChatConfig)
-    voice: dict = field(default_factory=lambda: {"stt_model": "small", "language": "ru"})
+    voice: dict = field(default_factory=lambda: dict(VOICE_DEFAULTS))
     apps: dict = field(default_factory=dict)
     web_ui: dict = field(default_factory=lambda: {"host": "0.0.0.0", "port": 8710})
+    # Откуда загружен конфиг (для сохранения настроек обратно)
+    source_path: Path | None = None
 
     # ---------- каталоги состояния ----------
     @property
@@ -125,13 +159,23 @@ class Config:
             Path(__file__).resolve().parent.parent / "config.json",
             cfg.agent_home / "config.json",
         ]
-        for p in candidates:
-            if p and Path(p).is_file():
-                try:
-                    data = json.loads(Path(p).read_text(encoding="utf-8"))
-                    break
-                except (json.JSONDecodeError, OSError):
-                    continue
+        # Сливаем ВСЕ найденные файлы (deep merge): более приоритетный
+        # (ближе к началу списка) перекрывает менее приоритетный. Это позволяет
+        # настройкам из AGENT_HOME/config.json (куда UI сохраняет изменения)
+        # жить рядом с поставляемым config.json репозитория.
+        merged: dict = {}
+        for p in reversed(candidates):
+            if not p or not Path(p).is_file():
+                continue
+            try:
+                parsed = json.loads(Path(p).read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            if not isinstance(parsed, dict):
+                continue
+            cfg.source_path = Path(p)   # последний (самый приоритетный) источник
+            merged = _deep_merge(merged, parsed)
+        data = merged
 
         def _sec(name: str) -> dict:
             return data.get(name) or {}

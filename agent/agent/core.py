@@ -76,6 +76,7 @@ class Agent:
         self.workdir = workdir
         self.planner = Planner(llm)
         self.running_tasks: dict[str, Control] = {}
+        self._task_tasks: dict[str, asyncio.Task | None] = {}  # task_id -> asyncio.Task
         self._ctx = ToolContext(cfg=cfg, bus=bus, gateway=gateway, journal=journal,
                                 memory=memory, platform=platform, llm=llm, workdir=workdir)
 
@@ -90,6 +91,7 @@ class Agent:
                            goal=goal, mode=mode, status="planning")
         control = Control()
         self.running_tasks[st.task_id] = control
+        self._task_tasks[st.task_id] = asyncio.current_task()
 
         try:
             # ---- 1. план ----
@@ -370,9 +372,15 @@ class Agent:
             return st
 
         except asyncio.CancelledError:
+            # Задачу остановили (кнопка «Стоп»). Не пробрасываем дальше —
+            # владелец (чат/очередь) должен получить нормальный статус
+            # cancelled и аккуратно завершить UI. Возвращаем st, чтобы
+            # CancelledError не убил внешнюю корутину (worker очереди и т.п.).
             st.status = "cancelled"
+            st.summary = "Задача остановлена пользователем."
             self.sessions.save(st)
-            raise
+            self.bus.emit("task_failed", task_id=st.task_id, error="отменено пользователем")
+            return st
         except Exception as e:  # noqa: BLE001
             st.status = "failed"
             st.summary = _friendly_agent_error(e, self.cfg)
@@ -381,6 +389,7 @@ class Agent:
             return st
         finally:
             self.running_tasks.pop(st.task_id, None)
+            self._task_tasks.pop(st.task_id, None)
 
     async def _replan(self, st: TaskState, history: list[dict],
                       errors: dict[str, int]) -> None:
@@ -486,10 +495,21 @@ class Agent:
             return True
         return False
 
-    def stop_task(self, task_id: str) -> bool:
+    def stop_task(self, task_id: str, force: bool = False) -> bool:
+        """Остановить задачу.
+
+        Сначала ставится мягкий флаг stop (цикл остановится на безопасной
+        границе). При `force=True` (кнопка «Стоп» в UI) дополнительно
+        отменяется текущее ожидание — в т.ч. длинный запрос к LLM, чтобы
+        остановка срабатывала сразу, а не «со второго раза».
+        """
         c = self.running_tasks.get(task_id)
         if c:
             c.stop()
+            if force:
+                t = self._task_tasks.get(task_id)
+                if t is not None and not t.done():
+                    t.cancel()
             return True
         return False
 
