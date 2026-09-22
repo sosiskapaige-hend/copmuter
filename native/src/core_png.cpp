@@ -120,6 +120,24 @@ std::vector<uint8_t> png_from_rgb(int width, int height, const std::vector<uint8
 }  // namespace
 
 // Уменьшение кадра: длинная сторона — не больше limit, пикселей — не больше max_pixels.
+// Запрошенная область экрана → координаты кадра. Вынесено из платформенного слоя,
+// чтобы логику можно было проверить тестами без Windows (мониторы бывают с
+// отрицательными координатами, и путать системы координат нельзя).
+FrameCrop crop_into_frame(const Frame& frame, int req_x, int req_y, int req_w, int req_h) {
+    FrameCrop crop;
+    if (frame.width <= 0 || frame.height <= 0 || req_w <= 0 || req_h <= 0) return crop;
+    const int fx = req_x - frame.origin_x;      // запрос в координатах кадра
+    const int fy = req_y - frame.origin_y;
+    if (fx < 0 || fy < 0) return crop;          // область начинается вне кадра
+    if (fx + req_w > frame.width || fy + req_h > frame.height) return crop;
+    crop.covered = true;
+    crop.x = fx;
+    crop.y = fy;
+    crop.width = req_w;
+    crop.height = req_h;
+    return crop;
+}
+
 Frame frame_shrink(const Frame& src, int max_pixels, int max_side) {
     Frame out = src;
     if (src.width <= 0 || src.height <= 0 || src.pixels.empty()) return out;

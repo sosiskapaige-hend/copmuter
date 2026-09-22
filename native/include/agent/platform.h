@@ -162,6 +162,18 @@ std::unique_ptr<IPlatform> make_platform();
 //  в модель уходит уменьшенный PNG, а не сырой BGRA всего рабочего стола.
 // ---------------------------------------------------------------------------
 Frame frame_shrink(const Frame& src, int max_pixels, int max_side = 2560);
+
+// Пересчёт запрошенной области экрана в координаты кадра (монитор может быть не
+// (0,0): при нескольких мониторах часть из них имеет отрицательные координаты).
+// Нужен, чтобы снимок и клик жили в одной системе координат.
+struct FrameCrop {
+    bool covered = false;   // запрошенная область целиком внутри кадра
+    int x = 0;              // смещение области внутри кадра
+    int y = 0;
+    int width = 0;
+    int height = 0;
+};
+FrameCrop crop_into_frame(const Frame& frame, int req_x, int req_y, int req_w, int req_h);
 bool png_encode(const Frame& frame, std::vector<uint8_t>& out);
 double frame_difference(const Frame& a, const Frame& b);
 std::string base64_encode(const uint8_t* data, size_t size);

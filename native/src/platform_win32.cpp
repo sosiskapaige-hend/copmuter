@@ -27,7 +27,8 @@
 #include <endpointvolume.h>   // NOLINT  (Core Audio: системная громкость)
 #include <mmdeviceapi.h>      // NOLINT
 #include <psapi.h>     // NOLINT
-#include <shlobj.h>    // NOLINT
+#include <shlobj.h>    // NOLINT  (оболочка: ярлыки, папки, PIDL)
+#include <shobjidl.h>  // NOLINT  (IShellLinkW/IPersistFile — настоящие интерфейсы COM)
 #include <shellapi.h>  // NOLINT
 #include <tlhelp32.h>  // NOLINT
 
@@ -219,7 +220,10 @@ int get_volume_com() {
 class WindowsPlatform : public IPlatform {
 public:
     WindowsPlatform() { CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED); }
-    ~WindowsPlatform() override { CoUninitialize(); }
+    ~WindowsPlatform() override {
+        dxgi_.reset();          // дубликатор освобождаем до деинициализации COM
+        CoUninitialize();
+    }
 
     const char* name() const override { return "windows"; }
     bool has_display() const override { return GetSystemMetrics(SM_CMONITORS) > 0; }
@@ -944,7 +948,7 @@ public:
         if (w <= 0 || h <= 0) return Frame{};
         Frame frame;
         // 1) Быстрый путь — DXGI Desktop Duplication
-        if (monitor <= 1 && capture_dxgi(x, y, w, h, &frame)) return frame;
+        if (capture_dxgi(x, y, w, h, &frame)) return frame;
         // 2) Совместимость — GDI BitBlt
         return capture_gdi(x, y, w, h);
     }
@@ -1035,50 +1039,46 @@ private:
         return out;
     }
 
-    // Путь из .lnk: через COM IShellLink (быстро и без разбора формата)
+    // Путь из .lnk: настоящие COM-интерфейсы (IShellLinkW/IPersistFile из заголовков,
+    // а не самодельные vtable: порядок методов там легко испортить, а ошибка проявится
+    // только на живой Windows). Если GetPath не дал результата (ярлык на UWP-приложение
+    // или цель хранится как PIDL) — берём путь через PIDL.
     std::string resolve_lnk(const std::string& lnk_path) {
-        HMODULE ole = LoadLibraryW(L"ole32.dll");
-        if (!ole) return {};
-        typedef HRESULT(WINAPI * PFN_CoCreateInstance)(REFCLSID, LPUNKNOWN, DWORD, REFIID, LPVOID*);
-        auto create = reinterpret_cast<PFN_CoCreateInstance>(GetProcAddress(ole, "CoCreateInstance"));
-        if (!create) {
-            FreeLibrary(ole);
+        ComScope com;   // на этом потоке COM может быть ещё не инициализирован
+        IShellLinkW* link = nullptr;
+        if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_IShellLinkW,
+                                    reinterpret_cast<void**>(&link))) ||
+            !link) {
             return {};
         }
-        static const CLSID clsid_shell_link = {0x00021401, 0x0000, 0x0000, {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
-        static const IID iid_shell_link = {0x000214F9, 0x0000, 0x0000, {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
-        struct IUnknownLike {
-            virtual HRESULT QueryInterface(REFIID, void**) = 0;
-            virtual ULONG AddRef() = 0;
-            virtual ULONG Release() = 0;
-        };
-        struct IPersistFile : IUnknownLike {
-            virtual HRESULT GetClassID(GUID*) = 0;
-            virtual HRESULT IsDirty() = 0;
-            virtual HRESULT Load(LPCOLESTR, DWORD) = 0;
-        };
-        struct IShellLinkW : IUnknownLike {
-            virtual HRESULT GetPath(LPWSTR, int, void*, DWORD) = 0;
-        };
-        void* link = nullptr;
-        if (FAILED(create(clsid_shell_link, nullptr, CLSCTX_INPROC_SERVER, iid_shell_link, &link)))
-            return {};
         std::string result;
-        auto* shell_link = reinterpret_cast<IShellLinkW*>(link);
-        void* persist = nullptr;
-        static const IID iid_persist_file = {0x0000010b, 0x0000, 0x0000, {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
-        if (SUCCEEDED(reinterpret_cast<IUnknownLike*>(link)->QueryInterface(iid_persist_file, &persist)) &&
+        IPersistFile* persist = nullptr;
+        if (SUCCEEDED(link->QueryInterface(IID_IPersistFile, reinterpret_cast<void**>(&persist))) &&
             persist) {
             const std::wstring w = to_wide(lnk_path);
-            if (SUCCEEDED(reinterpret_cast<IPersistFile*>(persist)->Load(w.c_str(), 0))) {
-                wchar_t target[MAX_PATH * 2];
-                if (SUCCEEDED(shell_link->GetPath(target, int(std::size(target)), nullptr, 0)))
+            if (SUCCEEDED(persist->Load(w.c_str(), STGM_READ))) {
+                wchar_t target[MAX_PATH * 2]{};
+                if (SUCCEEDED(link->GetPath(target, int(std::size(target)), nullptr,
+                                            SLGP_UNCPRIORITY)) &&
+                    target[0] != L'\0') {
                     result = normal_path(to_utf8(target));
+                    if (!file_exists(result)) result.clear();
+                }
+                if (result.empty()) {
+                    PIDLIST_ABSOLUTE pidl = nullptr;
+                    if (SUCCEEDED(link->GetIDList(&pidl)) && pidl) {
+                        wchar_t from_pidl[MAX_PATH * 2]{};
+                        if (SHGetPathFromIDListW(pidl, from_pidl) && from_pidl[0] != L'\0') {
+                            result = normal_path(to_utf8(from_pidl));
+                            if (!file_exists(result)) result.clear();
+                        }
+                        CoTaskMemFree(pidl);
+                    }
+                }
             }
-            reinterpret_cast<IUnknownLike*>(persist)->Release();
+            persist->Release();
         }
-        reinterpret_cast<IUnknownLike*>(link)->Release();
-        FreeLibrary(ole);
+        link->Release();
         return result;
     }
 
@@ -1173,94 +1173,166 @@ private:
     }
 
     // ------------------------------------------------------------------ экран
-    bool capture_dxgi(int x, int y, int w, int h, Frame* out) {
-        // Desktop Duplication: получение кадра с GPU без BitBlt (десятки раз быстрее).
-        // Если что-то не сложилось (RDP, драйвер, старый Windows) — вернём false и
-        // вызывающий уйдёт на GDI.
+    // Desktop Duplication живёт одним сеансом на процесс: создавать устройство и
+    // дубликатор на каждый снимок слишком дорого (десятки миллисекунд), а путь зрения
+    // делает минимум два снимка на действие (до клика и после). Последний кадр хранится
+    // в памяти: если экран не менялся, повторный снимок стоит только копирование.
+    struct DxgiSession {
         ID3D11Device* device = nullptr;
         ID3D11DeviceContext* ctx = nullptr;
         IDXGIOutputDuplication* dup = nullptr;
-        IDXGIResource* resource = nullptr;
-        ID3D11Texture2D* texture = nullptr;
-        D3D11_TEXTURE2D_DESC desc{};
-        DXGI_OUTDUPL_FRAME_INFO info{};
-        HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, nullptr, 0,
-                                       D3D11_SDK_VERSION, &device, nullptr, &ctx);
-        if (FAILED(hr)) return false;
-        IDXGIDevice* dxgi_device = nullptr;
+        int width = 0;         // размер кадра дублирования (экран выхода)
+        int height = 0;
+        int origin_x = 0;      // положение кадра в системе координат экрана
+        int origin_y = 0;
+        Frame last;            // последний полученный кадр (BGRA)
+        bool have_last = false;
+
+        void reset() {
+            if (dup) dup->Release();
+            if (ctx) ctx->Release();
+            if (device) device->Release();
+            dup = nullptr;
+            ctx = nullptr;
+            device = nullptr;
+            have_last = false;
+            last = Frame{};
+        }
+    };
+
+    DxgiSession dxgi_;
+
+    bool dxgi_start() {
+        dxgi_.reset();
         IDXGIAdapter* adapter = nullptr;
         IDXGIOutput* output = nullptr;
+        IDXGIOutput1* output1 = nullptr;
+        IDXGIDevice* dxgi_device = nullptr;
         bool ok = false;
         do {
-            if (FAILED(device->QueryInterface(__uuidof(IDXGIDevice), (void**)&dxgi_device))) break;
+            if (FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, nullptr, 0,
+                                         D3D11_SDK_VERSION, &dxgi_.device, nullptr, &dxgi_.ctx)))
+                break;
+            if (FAILED(dxgi_.device->QueryInterface(__uuidof(IDXGIDevice), (void**)&dxgi_device))) break;
             if (FAILED(dxgi_device->GetAdapter(&adapter))) break;
             if (FAILED(adapter->EnumOutputs(0, &output))) break;
-            IDXGIOutput1* output1 = nullptr;
+            DXGI_OUTPUT_DESC odesc{};
+            if (FAILED(output->GetDesc(&odesc))) break;
             if (FAILED(output->QueryInterface(__uuidof(IDXGIOutput1), (void**)&output1))) break;
-            hr = output1->DuplicateOutput(device, &dup);
-            output1->Release();
-            if (FAILED(hr)) break;
-            hr = dup->AcquireNextFrame(50, &info, &resource);
-            if (hr == DXGI_ERROR_WAIT_TIMEOUT) {
-                // Кадр не менялся: получаем описание последнего доступного
-                hr = dup->AcquireNextFrame(100, &info, &resource);
-            }
-            if (FAILED(hr)) break;
-            if (FAILED(resource->QueryInterface(__uuidof(ID3D11Texture2D), (void**)&texture))) {
-                dup->ReleaseFrame();
+            if (FAILED(output1->DuplicateOutput(dxgi_.device, &dxgi_.dup))) break;
+            dxgi_.origin_x = odesc.DesktopCoordinates.left;
+            dxgi_.origin_y = odesc.DesktopCoordinates.top;
+            dxgi_.width = int(odesc.DesktopCoordinates.right - odesc.DesktopCoordinates.left);
+            dxgi_.height = int(odesc.DesktopCoordinates.bottom - odesc.DesktopCoordinates.top);
+            if (dxgi_.width <= 0 || dxgi_.height <= 0) break;
+            ok = true;
+        } while (false);
+        if (output1) output1->Release();
+        if (output) output->Release();
+        if (adapter) adapter->Release();
+        if (dxgi_device) dxgi_device->Release();
+        if (!ok) dxgi_.reset();
+        return ok;
+    }
+
+    // Снимок области виртуального экрана. Если область не покрыта выходом, из которого
+    // идёт дублирование (второй монитор, RDP, потеря доступа к GPU) — возвращаем false,
+    // и вызывающий честно уйдёт на GDI.
+    bool capture_dxgi(int x, int y, int w, int h, Frame* out) {
+        if (!dxgi_.dup && !dxgi_start()) return false;
+
+        // Положение кадра в координатах экрана: у монитора может быть не (0,0).
+        Frame geometry;
+        geometry.width = dxgi_.width;
+        geometry.height = dxgi_.height;
+        geometry.origin_x = dxgi_.origin_x;
+        geometry.origin_y = dxgi_.origin_y;
+        const FrameCrop crop = crop_into_frame(geometry, x, y, w, h);
+        if (!crop.covered) return false;
+
+        IDXGIResource* resource = nullptr;
+        ID3D11Texture2D* texture = nullptr;
+        DXGI_OUTDUPL_FRAME_INFO info{};
+        HRESULT hr = dxgi_.dup->AcquireNextFrame(20, &info, &resource);
+        if (hr == DXGI_ERROR_ACCESS_LOST) {
+            // Сеанс умер (смена разрешения, выход из сеанса удалённого рабочего стола):
+            // пересоздаём его один раз, чтобы не терять снимок.
+            dxgi_.reset();
+            if (!dxgi_start()) return false;
+            hr = dxgi_.dup->AcquireNextFrame(20, &info, &resource);
+        }
+        if (hr == DXGI_ERROR_WAIT_TIMEOUT) {
+            // Экран не менялся: последний кадр всё ещё актуален.
+            return dxgi_.have_last && crop_cached(crop, out);
+        }
+        if (FAILED(hr) || !resource) return false;
+
+        bool ok = false;
+        do {
+            if (FAILED(resource->QueryInterface(__uuidof(ID3D11Texture2D), (void**)&texture))) break;
+            D3D11_TEXTURE2D_DESC desc{};
+            texture->GetDesc(&desc);
+            if (int(desc.Width) != dxgi_.width || int(desc.Height) != dxgi_.height) {
+                // Разрешение изменилось: сеанс пересоздадим в следующий раз, а этот
+                // снимок сделает GDI — важно вернуть правду, а не кадр другого размера.
+                dxgi_.reset();
                 break;
             }
-            texture->GetDesc(&desc);
             D3D11_TEXTURE2D_DESC staging = desc;
             staging.Usage = D3D11_USAGE_STAGING;
             staging.BindFlags = 0;
             staging.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
             staging.MiscFlags = 0;
             ID3D11Texture2D* readback = nullptr;
-            if (SUCCEEDED(device->CreateTexture2D(&staging, nullptr, &readback)) && readback) {
-                ctx->CopyResource(readback, texture);
-                D3D11_MAPPED_SUBRESOURCE mapped{};
-                if (SUCCEEDED(ctx->Map(readback, 0, D3D11_MAP_READ, 0, &mapped))) {
-                    const int src_w = int(desc.Width);
-                    const int src_h = int(desc.Height);
-                    const int cx = std::max(0, std::min(x, src_w - 1));
-                    const int cy = std::max(0, std::min(y, src_h - 1));
-                    const int cw = std::min(w, src_w - cx);
-                    const int ch = std::min(h, src_h - cy);
-                    out->width = cw;
-                    out->height = ch;
-                    out->origin_x = cx;
-                    out->origin_y = cy;
-                    out->stride = cw * 4;
-                    out->backend = "dxgi";
-                    out->pixels.resize(size_t(cw) * size_t(ch) * 4);
-                    const auto* src = static_cast<const uint8_t*>(mapped.pData);
-                    for (int row = 0; row < ch; ++row) {
-                        std::memcpy(out->pixels.data() + size_t(row) * size_t(cw) * 4,
-                                    src + size_t(row + cy) * mapped.RowPitch + size_t(cx) * 4,
-                                    size_t(cw) * 4);
-                    }
-                    ctx->Unmap(readback, 0);
-                    ok = true;
-                }
+            if (FAILED(dxgi_.device->CreateTexture2D(&staging, nullptr, &readback)) || !readback) break;
+            dxgi_.ctx->CopyResource(readback, texture);
+            D3D11_MAPPED_SUBRESOURCE mapped{};
+            if (FAILED(dxgi_.ctx->Map(readback, 0, D3D11_MAP_READ, 0, &mapped))) {
                 readback->Release();
+                break;
             }
-            dup->ReleaseFrame();
+            dxgi_.last.width = dxgi_.width;
+            dxgi_.last.height = dxgi_.height;
+            dxgi_.last.origin_x = dxgi_.origin_x;
+            dxgi_.last.origin_y = dxgi_.origin_y;
+            dxgi_.last.stride = dxgi_.width * 4;
+            dxgi_.last.backend = "dxgi";
+            dxgi_.last.pixels.resize(size_t(dxgi_.width) * size_t(dxgi_.height) * 4);
+            const auto* src = static_cast<const uint8_t*>(mapped.pData);
+            for (int row = 0; row < dxgi_.height; ++row) {
+                std::memcpy(dxgi_.last.pixels.data() + size_t(row) * size_t(dxgi_.width) * 4,
+                            src + size_t(row) * mapped.RowPitch,
+                            size_t(dxgi_.width) * 4);
+            }
+            dxgi_.ctx->Unmap(readback, 0);
+            readback->Release();
+            dxgi_.have_last = true;
+            ok = crop_cached(crop, out);
         } while (false);
         if (texture) texture->Release();
-        if (resource) resource->Release();
-        if (dup) dup->Release();
-        if (output) output->Release();
-        if (adapter) adapter->Release();
-        if (dxgi_device) dxgi_device->Release();
-        if (ctx) ctx->Release();
-        if (device) device->Release();
-        if (ok) {
-            SYSTEMTIME st{};
-            GetSystemTime(&st);
-            out->captured_ms = now_ms();
-        }
+        resource->Release();
+        if (dxgi_.dup) dxgi_.dup->ReleaseFrame();
         return ok;
+    }
+
+    // Вырезаем запрошенную область из последнего кадра (обращения к GPU нет).
+    bool crop_cached(const FrameCrop& crop, Frame* out) {
+        if (!dxgi_.have_last) return false;
+        out->width = crop.width;
+        out->height = crop.height;
+        out->origin_x = dxgi_.origin_x + crop.x;
+        out->origin_y = dxgi_.origin_y + crop.y;
+        out->stride = crop.width * 4;
+        out->backend = "dxgi";
+        out->captured_ms = now_ms();
+        out->pixels.resize(size_t(crop.width) * size_t(crop.height) * 4);
+        for (int row = 0; row < crop.height; ++row) {
+            std::memcpy(out->pixels.data() + size_t(row) * size_t(crop.width) * 4,
+                        dxgi_.last.pixels.data() +
+                            (size_t(crop.y + row) * size_t(dxgi_.last.width) + size_t(crop.x)) * 4,
+                        size_t(crop.width) * 4);
+        }
+        return true;
     }
 
     Frame capture_gdi(int x, int y, int w, int h) {

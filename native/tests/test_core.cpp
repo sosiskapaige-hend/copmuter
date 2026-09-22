@@ -1051,6 +1051,44 @@ static void test_preview_paths() {
 }
 
 // ---------------------------------------------------------------------------
+//  Кадр и координаты: монитор не всегда начинается с (0,0)
+// ---------------------------------------------------------------------------
+static void test_frame_crop() {
+    group("снимок и клик в одной системе координат (мультимонитор)");
+    Frame primary;
+    primary.width = 1920;
+    primary.height = 1080;
+    primary.origin_x = 0;
+    primary.origin_y = 0;
+
+    FrameCrop whole = crop_into_frame(primary, 0, 0, 1920, 1080);
+    check(whole.covered && whole.x == 0 && whole.y == 0 && whole.width == 1920,
+          "весь основной монитор покрыт кадром");
+
+    FrameCrop region = crop_into_frame(primary, 100, 50, 400, 300);
+    check(region.covered && region.x == 100 && region.y == 50, "область вырезается со смещением");
+
+    // Второй монитор слева (отрицательные координаты) — как в реальной раскладке Windows.
+    Frame left;
+    left.width = 1280;
+    left.height = 1024;
+    left.origin_x = -1280;
+    left.origin_y = 0;
+    FrameCrop on_left = crop_into_frame(left, -1200, 100, 200, 200);
+    check(on_left.covered && on_left.x == 80 && on_left.y == 100,
+          "отрицательные координаты монитора пересчитаны верно");
+    check(!crop_into_frame(primary, -1200, 100, 200, 200).covered,
+          "область левого монитора не считается частью основного");
+    check(!crop_into_frame(primary, 1800, 1000, 400, 400).covered,
+          "область, выходящая за кадр, честно отклонена");
+    check(!crop_into_frame(Frame{}, 0, 0, 10, 10).covered, "пустой кадр ничего не покрывает");
+
+    // Координаты кадра + смещение = координаты экрана (этим живёт путь зрения).
+    check(left.origin_x + on_left.x == -1200 && left.origin_y + on_left.y == 100,
+          "смещение кадра переводит пиксель обратно в координаты экрана");
+}
+
+// ---------------------------------------------------------------------------
 //  Полная сборка теста
 // ---------------------------------------------------------------------------
 int main(int argc, char** argv) {
@@ -1077,6 +1115,7 @@ int main(int argc, char** argv) {
         test_confirmation_gate();
         test_confirmation_flow();
         test_preview_paths();
+        test_frame_crop();
         test_browser_path();
         test_cancel_stops_agent_loop();
         test_ipc();
