@@ -50,6 +50,32 @@ SUMMARY = """Сожми диалог в короткое резюме на ру�
 """
 
 
+def with_apps(apps: list[dict] | None, limit: int = 12) -> str:
+    """Реестр приложений как подсказка модели: используй ровно эти имена и пути.
+
+    Ядро присылает только релевантное (упомянутое в задаче + установленное), так что
+    здесь дополнительно режем по количеству строк — контекст не раздуваем.
+    """
+    if not apps:
+        return ""
+    lines: list[str] = []
+    for app in apps[:limit]:
+        if not isinstance(app, dict):
+            continue
+        key = str(app.get("key") or "").strip()
+        name = str(app.get("name") or key).strip()
+        if not key and not name:
+            continue
+        how = str(app.get("path") or "").strip() or str(app.get("protocol") or "").strip() \
+            or str(app.get("appid") or "").strip()
+        lines.append(f"- {name}" + (f" (ключ {key})" if key and key != name else "") +
+                     (f" — {how}" if how else " — путь уточнится при запуске"))
+    if not lines:
+        return ""
+    return ("Приложения на этой машине (используй точное имя/ключ, путь не выдумывай):\n"
+            + "\n".join(lines))
+
+
 def with_state(state: dict | None) -> str:
     """Состояние компьютера как компактная строка (только релевантные части)."""
     if not state:

@@ -838,6 +838,51 @@ bool AgentRuntime::do_compound(const Intent& it, FastOutcome& out) {
 // ---------------------------------------------------------------------------
 //  Предпросмотр (PLAN ONLY) и состояние
 // ---------------------------------------------------------------------------
+namespace {
+// Нижний регистр для латиницы и кириллицы: сравниваем подстроки, регистр не важен.
+std::string lower_copy(std::string text) {
+    for (char& ch : text) {
+        const unsigned char c = static_cast<unsigned char>(ch);
+        if (c >= 'A' && c <= 'Z') ch = static_cast<char>(c + 32);
+    }
+    for (size_t i = 0; i + 1 < text.size(); ++i) {
+        const unsigned char a = static_cast<unsigned char>(text[i]);
+        const unsigned char b = static_cast<unsigned char>(text[i + 1]);
+        if (a == 0xD0 && b >= 0x90 && b <= 0x9F) { text[i + 1] = static_cast<char>(b + 0x20); ++i; }
+        else if (a == 0xD0 && b >= 0xA0 && b <= 0xAF) { text[i] = static_cast<char>(0xD1);
+                                                       text[i + 1] = static_cast<char>(b - 0x20); ++i; }
+        else if (a == 0xD0 && b == 0x81) { text[i] = static_cast<char>(0xD1);
+                                           text[i + 1] = static_cast<char>(0x91); ++i; }   // Ё → ё
+    }
+    return text;
+}
+
+std::string app_json(const AppInfo& app) {
+    std::string out = "{\"key\":\"" + json_escape(app.key) + "\",\"name\":\"" +
+                      json_escape(app.display_name) + "\"";
+    if (!app.path.empty()) out += ",\"path\":\"" + json_escape(app.path) + "\"";
+    if (!app.protocol.empty()) out += ",\"protocol\":\"" + json_escape(app.protocol) + "\"";
+    if (!app.appid.empty()) out += ",\"appid\":\"" + json_escape(app.appid) + "\"";
+    if (app.installed) out += ",\"installed\":true";
+    out += "}";
+    return out;
+}
+}  // namespace
+
+// Что именно откроется: подтверждённый путь из реестра, протокол, AppID или честное
+// «найдётся при запуске». Нужно, чтобы PLAN ONLY не показывал выдуманный путь.
+std::string AgentRuntime::describe_app(std::string_view target) const {
+    const std::string name = target.empty() ? std::string("приложение") : std::string(target);
+    AppRegistry::Lookup hit = const_cast<AppRegistry&>(apps_).find(target);
+    if (!hit.app) return "«" + name + "»: приложение в реестре не найдено, путь определится при запуске";
+    const AppInfo& app = *hit.app;
+    if (!app.path.empty()) return "«" + app.display_name + "» → " + app.path;
+    if (!app.protocol.empty()) return "«" + app.display_name + "» → " + app.protocol + " (протокол Windows)";
+    if (!app.appid.empty()) return "«" + app.display_name + "» → " + app.appid;
+    return "«" + app.display_name + "»: кандидат найден, но путь ещё не подтверждён — " +
+           std::string("будет найдено через меню «Пуск»/PATH при запуске");
+}
+
 std::string AgentRuntime::preview(std::string_view phrase) {
     Route route = router_->route(phrase);
     std::string text = "План (ничего не выполнялось): «" + std::string(phrase) + "»\n";
@@ -853,9 +898,14 @@ std::string AgentRuntime::preview(std::string_view phrase) {
             return;
         }
         text += std::to_string(index++) + ". " + in.label();
+        const std::string action = std::string(in.action.view());
         const std::string target = in.slot(SlotId::Target).str();
         const std::string place = in.slot(SlotId::Place).str();
-        if (!target.empty() || !place.empty()) {
+        if (action == "launch_app" || action == "focus_window") {
+            // Путь приложения ищет реестр (кеш → установленное ПО → протокол → Shell),
+            // поэтому не показываем путь, склеенный с рабочим каталогом.
+            text += " → " + describe_app(target);
+        } else if (!target.empty() || !place.empty()) {
             bool found = true;
             const std::string path = resolve_target_path(target, place, false, found);
             if (!path.empty()) text += " → " + path;
@@ -874,6 +924,46 @@ std::string AgentRuntime::preview(std::string_view phrase) {
         text += confirm ? ("Потребуется подтверждение: " + reason) : "Подтверждение не требуется";
     }
     return text;
+}
+
+std::string AgentRuntime::apps_json_for(std::string_view task, size_t limit) const {
+    const std::string text = lower_copy(std::string(task));
+    std::vector<const AppInfo*> chosen;
+    std::vector<const AppInfo*> rest;
+    for (const AppInfo* app : apps_.all()) {
+        if (!app) continue;
+        bool mentioned = false;
+        for (const std::string& word : {app->key, app->display_name}) {
+            if (!word.empty() && text.find(lower_copy(word)) != std::string::npos) mentioned = true;
+        }
+        for (const std::string& alias : app->aliases) {
+            if (alias.size() >= 3 && text.find(lower_copy(alias)) != std::string::npos) mentioned = true;
+        }
+        if (mentioned) {
+            chosen.push_back(app);
+        } else if (app->installed || !app->path.empty()) {
+            rest.push_back(app);
+        }
+    }
+    // Установленные — по частоте использования: чаще нужные впереди.
+    std::stable_sort(rest.begin(), rest.end(), [](const AppInfo* a, const AppInfo* b) {
+        if (a->uses != b->uses) return a->uses > b->uses;
+        return a->display_name < b->display_name;
+    });
+    std::string out = "[";
+    size_t written = 0;
+    for (const AppInfo* app : chosen) {
+        if (written >= limit) break;
+        if (written++) out += ",";
+        out += app_json(*app);
+    }
+    for (const AppInfo* app : rest) {
+        if (written >= limit) break;
+        if (written++) out += ",";
+        out += app_json(*app);
+    }
+    out += "]";
+    return out;
 }
 
 std::string AgentRuntime::state_json() const {

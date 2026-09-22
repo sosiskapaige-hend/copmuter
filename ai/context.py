@@ -118,11 +118,16 @@ class ContextManager:
         step: int = 1,
         max_steps: int = 12,
         extra_system: str = "",
+        apps: list[dict] | None = None,
     ) -> list[dict]:
         system_parts = [self.core_prompt]
         state_text = prompts.with_state(state)
         if state_text:
             system_parts.append("Текущее состояние компьютера:\n" + state_text[: self.state_limit_chars])
+        apps_text = prompts.with_apps(apps)
+        if apps_text:
+            # Реестр приложений этой конкретной машины: точные имена, пути и протоколы.
+            system_parts.append(apps_text)
         if self.summary:
             system_parts.append("Что было раньше:\n" + self.summary)
         if self.facts:

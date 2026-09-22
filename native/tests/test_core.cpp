@@ -494,6 +494,7 @@ static int start_fake_brain(const std::string& repo, const std::string& sock, co
                             const std::string& mode, const std::string& log_path) {
     const std::string cmd = "cd " + repo + " && AGENT_FAKE_SOCKET=" + sock + " AGENT_FAKE_BASE=" + base +
                             " AGENT_FAKE_MODE=" + mode + " AGENT_FAKE_LOG=" + log_path +
+                            " AGENT_FAKE_DUMP=1" +
                             " nohup python3 -m ai.fake_brain > " + log_path + ".out 2>&1 &";
     return std::system(cmd.c_str());
 }
@@ -528,6 +529,9 @@ static void test_agent_loop() {
     AgentRuntime rt(cfg, make_platform());
     std::string error;
     check(rt.start(error), "ядро стартовало: " + error);
+    // Реестр приложений этой машины: модель должна получать реальные имена и пути,
+    // а не выдумывать их. Путь подтверждаем так же, как это делает первый запуск.
+    rt.apps().set_path("vscode", "/usr/bin/code");
 
     const std::string result = rt.run_task("проанализируй проект и напиши отчёт", 6);
     check(result.find("\"mode\":\"agent\"") != std::string::npos, "задача пошла агентным циклом");
@@ -536,6 +540,18 @@ static void test_agent_loop() {
     check(result.find("\"tool_calls\":3") != std::string::npos, "инструменты вызваны по плану");
     check(fs::exists(base + "/AgentLoop/plan.txt"), "побочный эффект на диске есть");
     check_eq(read_text_file(base + "/AgentLoop/plan.txt"), "готово", "содержимое файла записано верно");
+
+    // Что именно ядро положило в запрос к мозгу: состояние ПК и реестр приложений.
+    const std::string journal0 = read_text_file(log);
+    check(journal0.find("request=") != std::string::npos, "запросы к мозгу записаны");
+    check(journal0.find("\"apps\": [") != std::string::npos, "в запросе плана есть реестр приложений");
+    check(journal0.find("\"key\": \"vscode\"") != std::string::npos &&
+              journal0.find("/usr/bin/code") != std::string::npos,
+          "подтверждённый путь приложения уходит в план");
+    check(journal0.find("\"state\": {") != std::string::npos, "в запросе плана есть состояние ПК");
+    check(journal0.find("\"tools\": [") != std::string::npos, "в запросе плана есть инструменты");
+    check(journal0.find("\"observations\":") != std::string::npos,
+          "наблюдения предыдущих шагов передаются модели");
 
     // Второй запуск переиспользует тот же канал: воркер не перезапускается на команду.
     const std::string again = rt.run_task("проверь и настрой окружение для проекта", 6);
@@ -993,6 +1009,48 @@ static void test_confirmation_flow() {
 }
 
 // ---------------------------------------------------------------------------
+//  PLAN ONLY: честный путь приложения (не склейка с рабочим каталогом)
+// ---------------------------------------------------------------------------
+static void test_preview_paths() {
+    group("PLAN ONLY показывает путь из реестра, а не выдуманный");
+    auto platform = std::make_unique<MockPlatform>();
+    MockPlatform* plat = platform.get();   // cwd мока — /mock
+    RuntimeConfig cfg;
+    cfg.preload = false;
+    cfg.state_dir = "/tmp/agent_preview_state";
+    AgentRuntime rt(cfg, std::move(platform));
+    std::string error;
+    rt.start(error);
+
+    // Приложение вне каталога: обещаем поиск, но не показываем /mock/ZzzApp.
+    const std::string unknown = rt.preview("открой ZzzApp и Telegram");
+    check(unknown.find("ZzzApp") != std::string::npos && unknown.find("elegram") != std::string::npos,
+          "в плане обе команды: " + unknown);
+    check(unknown.find("/mock/") == std::string::npos,
+          "нет пути, склеенного с рабочим каталогом");
+    check(unknown.find("при запуске") != std::string::npos,
+          "сказано, что путь определится при запуске: " + unknown);
+    // Известное приложение: видно, чем именно его откроют (протокол/путь), без выдумок.
+    const std::string pair = rt.preview("открой Discord и Telegram");
+    check(pair.find("discord://") != std::string::npos || pair.find("tg://") != std::string::npos,
+          "для известных приложений виден способ запуска: " + pair);
+
+    // Как только путь подтверждён — он и показывается (кеш реестра приложений).
+    rt.apps().set_path("discord", "C:/Program Files/Discord/Discord.exe");
+    const std::string known = rt.preview("открой Discord");
+    check(known.find("C:/Program Files/Discord/Discord.exe") != std::string::npos,
+          "подтверждённый путь виден в плане: " + known);
+
+    // Файловая операция по-прежнему показывает реальный путь места.
+    plat->files["/home/tester/Desktop/123"] = "<dir>";
+    const std::string del = rt.preview("удали папку 123 с рабочего стола");
+    check(del.find("/home/tester/Desktop/123") != std::string::npos,
+          "для файловой операции путь на месте: " + del);
+    check(del.find("одтвержд") != std::string::npos,
+          "видно, потребуется ли подтверждение: " + del);
+}
+
+// ---------------------------------------------------------------------------
 //  Полная сборка теста
 // ---------------------------------------------------------------------------
 int main(int argc, char** argv) {
@@ -1018,6 +1076,7 @@ int main(int argc, char** argv) {
         test_vision_honest_failure();
         test_confirmation_gate();
         test_confirmation_flow();
+        test_preview_paths();
         test_browser_path();
         test_cancel_stops_agent_loop();
         test_ipc();

@@ -198,6 +198,9 @@ def serve(path: str) -> None:
                         protocol.write_frame(conn, protocol.text_reply(request.get("id", 0), "выхожу"))
                         return
                     log_line(request.get("type", "?"))
+                    if os.environ.get("AGENT_FAKE_DUMP"):
+                        # Для тестов: видно, что именно ядро положило в запрос.
+                        log_line("request=" + json.dumps(request, ensure_ascii=False))
                     protocol.write_frame(conn, build_reply(request))
             except (protocol.ProtocolError, ConnectionError):
                 pass

@@ -118,6 +118,18 @@ class TestPlan(unittest.TestCase):
         self.assertEqual(client.calls[0]["kwargs"]["tools"][0]["function"]["name"],
                          "launch_application")
 
+    def test_plan_passes_app_registry_to_context(self) -> None:
+        worker, client, _ = make_worker([tool_call("launch_application", {"name": "discord"})])
+        reply = worker.handle({"id": 3, "type": "plan", "task": "открой дискорд и отправь сообщение",
+                               "step": 1,
+                               "tools": [{"name": "launch_application", "description": "запуск"}],
+                               "apps": [{"key": "discord", "name": "Discord",
+                                         "path": "C:/Users/me/AppData/Discord.exe"}]})
+        worker.close()
+        self.assertTrue(reply["ok"], reply)
+        system = client.calls[0]["messages"][0]["content"]
+        self.assertIn("C:/Users/me/AppData/Discord.exe", system)
+
     def test_finished_without_calls(self) -> None:
         worker, _, _ = make_worker([LLMReply(content="Готово, задача выполнена")])
         reply = worker.handle({"id": 2, "type": "plan", "task": "установи и настрой окружение"})
@@ -241,6 +253,33 @@ class TestContextManager(unittest.TestCase):
         chosen = [t["name"] for t in manager.select_tools(tools, "удали папку 123 с рабочего стола")]
         self.assertIn("delete_path", chosen)
         self.assertIn("launch_application", chosen)      # ядро инструментов всегда рядом
+
+    def test_apps_from_registry_reach_the_model(self) -> None:
+        """Реестр приложений этой машины: точные имена и пути вместо догадок модели."""
+        manager = ContextManager(max_tokens=4096)
+        messages = manager.build(
+            "открой дискорд",
+            apps=[{"key": "discord", "name": "Discord", "protocol": "discord://"},
+                  {"key": "vscode", "name": "Visual Studio Code", "path": "C:/VSCode/Code.exe"}],
+        )
+        system = messages[0]["content"]
+        self.assertIn("Discord", system)
+        self.assertIn("discord://", system)
+        self.assertIn("C:/VSCode/Code.exe", system)
+        self.assertIn("не выдумывай", system)
+
+    def test_apps_are_optional(self) -> None:
+        manager = ContextManager(max_tokens=4096)
+        messages = manager.build("просто задача", apps=[])
+        self.assertNotIn("Приложения на этой машине", messages[0]["content"])
+
+    def test_apps_list_is_capped(self) -> None:
+        from ai import prompts
+        many = [{"key": f"app{i}", "name": f"App {i}"} for i in range(40)]
+        text = prompts.with_apps(many)
+        self.assertEqual(text.count("\n- "), 12)          # в контекст идёт ровно 12 приложений
+        self.assertIn("- App 11", text)
+        self.assertNotIn("- App 12", text)
 
     def test_budget_is_respected(self) -> None:
         manager = ContextManager(max_tokens=4000, reserve_for_reply=500, history_limit=20)

@@ -100,6 +100,7 @@ class AiWorker:
             observations=list(request.get("observations") or []),
             step=step,
             max_steps=max_steps,
+            apps=list(request.get("apps") or []),
         )
         messages.append({"role": "user", "content": f"Задача: {task}\n\n{PLAN_INSTRUCTION}"})
 

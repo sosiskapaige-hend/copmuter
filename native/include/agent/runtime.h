@@ -202,6 +202,10 @@ private:
     void note_tool_call(std::string_view tool, bool ok, double ms);
     void count_task(bool ok, bool fast, double ms, double route_us);
     void register_builtin_tools();
+    std::string describe_app(std::string_view target) const;   // для PLAN ONLY
+    // Компактный список приложений для модели: сначала те, что упомянуты в задаче,
+    // затем установленные с подтверждённым путём. Полный каталог модели не отправляем.
+    std::string apps_json_for(std::string_view task, size_t limit = 12) const;
 
     RuntimeConfig cfg_;
     std::unique_ptr<IPlatform> platform_;

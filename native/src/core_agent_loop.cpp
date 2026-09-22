@@ -119,6 +119,9 @@ std::string AgentRuntime::run_task(std::string_view task, int max_steps) {
             std::string(step == 1 ? "plan" : "replan") + "\",\"task\":\"" + json_escape(text) +
             "\",\"step\":" + std::to_string(step) + ",\"max_steps\":" + std::to_string(max_steps) +
             ",\"tools\":" + tools_json + ",\"state\":" + state_json() +
+            // Реестр приложений: модель должна называть приложения так, как они есть
+            // на этой машине, а не угадывать имена и пути.
+            ",\"apps\":" + apps_json_for(text) +
             ",\"observations\":" + obs_json + "}";
         emit(Event{"plan", "", "running", step == 1 ? "Думаю, как выполнить задачу"
                                                     : "Уточняю план по результатам",
