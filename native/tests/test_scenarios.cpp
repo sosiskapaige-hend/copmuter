@@ -251,6 +251,7 @@ void scenario_delete_folder() {
 void scenario_click_button(ScenarioBrain& brain) {
     auto platform = std::make_unique<MockPlatform>();
     MockPlatform* plat = platform.get();
+    plat->spawn_registers_process = true;   // программа действительно открывается
     RuntimeConfig cfg;
     cfg.preload = true;
     cfg.state_dir = "/tmp/agent_scenario_state10";
@@ -262,6 +263,7 @@ void scenario_click_button(ScenarioBrain& brain) {
     const std::string result = rt.run_task("открой программу mockapp и нажми кнопку ОК", 8);
     check(contains(result, "\"ok\":true"), "задача выполнена: " + result);
     check(contains(result, "launch_application"), "программа открыта инструментом ядра");
+    check(contains(result, "launch_application: ok"), "запуск подтверждён процессом: " + result);
     check(contains(result, "find_element"), "кнопку искали зрением: интерфейс неизвестен");
     check(plat->clicks.size() == 1, "клик сделан ядром по координатам зрения");
     if (!plat->clicks.empty()) {

@@ -77,6 +77,22 @@ native/build_linux.sh --run          # сборка + тесты + бенчма�
 python3 -m unittest discover -s ai/tests -p 'test_*.py'
 ```
 
+## Ручная проверка без UI
+
+Оболочку можно не поднимать: мозг и ядро запускаются отдельно, канал — Named Pipe.
+
+```bat
+:: терминал 1 — мозг (Python + LM Studio), живёт до закрытия
+python -m ai.main --serve --socket \\.\pipe\agent_ai_v1 --state-dir %LOCALAPPDATA%\Copmuter
+
+:: терминал 2 — ядро
+native\build\agent_host.exe --ai \\.\pipe\agent_ai_v1 --task "напиши калькулятор на python"
+native\build\agent_host.exe --ai \\.\pipe\agent_ai_v1 "нажми кнопку ОК"
+```
+
+Без модели можно тоже: `ai/dev_scripted` — тот же воркер со сценарным мозгом
+(`AGENT_SCRIPT='[{"calls":[{"tool":"create_folder","args":{"path":"C:/tmp/x"}}]},{"say":"готово"}]'`).
+
 ## Тесты и приёмка
 
 | Набор | Что проверяет | Команда |
