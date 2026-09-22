@@ -125,6 +125,10 @@ public sealed class NativeRuntime : IDisposable
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern void agent_cancel_current();
 
+    // Ответ на «подтвердите опасное действие»: 1 — да, 0 — нет.
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void agent_answer_confirmation(int approved);
+
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern void agent_free(IntPtr ptr);
 
@@ -153,6 +157,8 @@ public sealed class NativeRuntime : IDisposable
             ["launch_timeout_ms"] = settings.LaunchTimeoutMs,
             ["vision_timeout_ms"] = settings.VisionTimeoutMs,
             ["max_retries"] = settings.MaxRetries,
+            // Рантайм ждёт ответа диалога столько миллисекунд; 0 — не ждать вовсе.
+            ["confirm_timeout_ms"] = settings.ConfirmTimeoutMs,
         };
         var code = agent_init(JsonSerializer.Serialize(config));
         if (code != 0)
@@ -251,6 +257,15 @@ public sealed class NativeRuntime : IDisposable
     public string StateJson() => ReadAndFree(agent_state_json());
 
     public void Cancel() => agent_cancel_current();
+
+    /// <summary>Пользователь ответил на диалог подтверждения опасного действия.</summary>
+    public void AnswerConfirmation(bool approved)
+    {
+        if (_initialized)
+        {
+            agent_answer_confirmation(approved ? 1 : 0);
+        }
+    }
 
     private static string ReadAndFree(IntPtr ptr)
     {

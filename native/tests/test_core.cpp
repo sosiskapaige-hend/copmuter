@@ -873,6 +873,126 @@ static void test_browser_path() {
 }
 
 // ---------------------------------------------------------------------------
+//  Подтверждение опасных действий: ответ приходит от пользователя
+// ---------------------------------------------------------------------------
+static void test_confirmation_flow() {
+    group("подтверждение: опасное действие выполняется только с согласия");
+    // В режиме auto (по умолчанию) одиночная явно названная папка удаляется без вопроса,
+    // а массовое удаление и критичные операции — только с подтверждением.
+    const std::string target = "/home/tester/Desktop/123";
+    const std::string state = "/tmp/agent_confirm_state";
+
+    // 1) Ждём ответа: пока пользователь не ответил, действие не выполняется.
+    {
+        auto platform = std::make_unique<MockPlatform>();
+        MockPlatform* plat = platform.get();
+        plat->files[target] = "<dir>";
+        RuntimeConfig cfg;
+        cfg.preload = false;
+        cfg.state_dir = state;
+        cfg.safety_mode = "confirm";
+        cfg.confirm_timeout_ms = 5000;
+        AgentRuntime rt(cfg, std::move(platform));
+        std::string error;
+        rt.start(error);
+
+        std::vector<std::string> events;
+        rt.set_event_sink([&events](const Event& ev) {
+            if (ev.kind == "confirm") events.push_back(ev.status);
+        });
+        std::thread answerer([&rt]() {
+            // Даём рантайму время дойти до вопроса, затем «нажимаем Да».
+            for (int i = 0; i < 200 && !rt.confirmation_pending(); ++i)
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            rt.answer_confirmation(true);
+        });
+        const int64_t t0 = now_ms();
+        const FastOutcome outcome = rt.execute("удали папку 123 с рабочего стола");
+        const int64_t ms = now_ms() - t0;
+        answerer.join();
+        check(outcome.ok, "после подтверждения удаление выполнено: " + outcome.to_json());
+        check(plat->files.count(target) == 0, "папка действительно удалена");
+        check(ms < 3000, "ожидания ответа не растянулись: " + std::to_string(ms) + " мс");
+        bool asked = false, approved = false;
+        for (const std::string& status : events) {
+            if (status == "pending") asked = true;
+            if (status == "approved") approved = true;
+        }
+        check(asked, "пользователю задан вопрос (событие confirm/pending)");
+        check(approved, "подтверждение отражено в событиях для UI");
+    }
+
+    // 2) Отказ: действие не выполняется, папка остаётся.
+    {
+        auto platform = std::make_unique<MockPlatform>();
+        MockPlatform* plat = platform.get();
+        plat->files[target] = "<dir>";
+        RuntimeConfig cfg;
+        cfg.preload = false;
+        cfg.state_dir = state + "2";
+        cfg.safety_mode = "confirm";
+        cfg.confirm_timeout_ms = 5000;
+        AgentRuntime rt(cfg, std::move(platform));
+        std::string error;
+        rt.start(error);
+        std::thread answerer([&rt]() {
+            for (int i = 0; i < 200 && !rt.confirmation_pending(); ++i)
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            rt.answer_confirmation(false);
+        });
+        const FastOutcome outcome = rt.execute("удали папку 123 с рабочего стола");
+        answerer.join();
+        check(!outcome.ok, "без согласия действие не выполнено");
+        check(plat->files.count(target) == 1, "папка на месте — ничего не удалено");
+        check(outcome.message.find("отменено") != std::string::npos ||
+                  outcome.message.find("подтверждение") != std::string::npos,
+              "пользователю объяснили, что нужно подтверждение: " + outcome.message);
+    }
+
+    // 3) Подтверждение требуется, но ждать ответа не настроено — отказ, а не «на удачу».
+    {
+        auto platform = std::make_unique<MockPlatform>();
+        MockPlatform* plat = platform.get();
+        plat->files[target] = "<dir>";
+        RuntimeConfig cfg;
+        cfg.preload = false;
+        cfg.state_dir = state + "3";
+        cfg.safety_mode = "confirm";
+        cfg.confirm_timeout_ms = 0;
+        AgentRuntime rt(cfg, std::move(platform));
+        std::string error;
+        rt.start(error);
+        const FastOutcome outcome = rt.execute("удали папку 123 с рабочего стола");
+        check(!outcome.ok && plat->files.count(target) == 1,
+              "молчание = отказ, данные целы: " + outcome.to_json());
+    }
+
+    // 4) Обработчик из UI (диалог) — решает он, ожидание не нужно.
+    {
+        auto platform = std::make_unique<MockPlatform>();
+        MockPlatform* plat = platform.get();
+        plat->files[target] = "<dir>";
+        RuntimeConfig cfg;
+        cfg.preload = false;
+        cfg.state_dir = state + "4";
+        cfg.safety_mode = "confirm";
+        AgentRuntime rt(cfg, std::move(platform));
+        std::string error;
+        rt.start(error);
+        std::string asked_question;
+        rt.set_confirm_handler([&asked_question](const std::string& question, int) {
+            asked_question = question;
+            return true;      // пользователь нажал «Да» в диалоге
+        });
+        const FastOutcome outcome = rt.execute("удали папку 123 с рабочего стола");
+        check(outcome.ok, "обработчик подтвердил — действие выполнено: " + outcome.to_json());
+        check(asked_question.find("Удалить папку") != std::string::npos,
+              "в диалоге понятный вопрос: " + asked_question);
+        check(plat->files.count(target) == 0, "папка удалена после подтверждения");
+    }
+}
+
+// ---------------------------------------------------------------------------
 //  Полная сборка теста
 // ---------------------------------------------------------------------------
 int main(int argc, char** argv) {
@@ -897,6 +1017,7 @@ int main(int argc, char** argv) {
         test_vision_roundtrip();
         test_vision_honest_failure();
         test_confirmation_gate();
+        test_confirmation_flow();
         test_browser_path();
         test_cancel_stops_agent_loop();
         test_ipc();

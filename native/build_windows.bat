@@ -34,7 +34,8 @@ set LIBS=user32.lib gdi32.lib shell32.lib ole32.lib oleaut32.lib advapi32.lib sh
  psapi.lib dxgi.lib d3d11.lib uuid.lib version.lib winmm.lib
 
 echo == AgentRuntime.dll (ядро, постоянный процесс внутри приложения)
-cl %FLAGS% /LD %CORE% /Fe:AgentRuntime.dll /Fo:core_ /link /INCREMENTAL:NO %LIBS% /DEF:..\AgentRuntime.def
+rem Экспорт C ABI задан __declspec(dllexport) в src\abi.cpp — отдельный .def не нужен.
+cl %FLAGS% /LD %CORE% /Fe:AgentRuntime.dll /Fo:core_ /link /INCREMENTAL:NO %LIBS%
 if errorlevel 1 (popd & popd & exit /b 1)
 
 echo == agent_host.exe (отладочный запуск ядра без UI)
@@ -54,5 +55,7 @@ echo.
 echo Готово: %ROOT%build\AgentRuntime.dll, agent_host.exe, agent_tests.exe, agent_scenarios.exe
 echo Проверка:  build\agent_host.exe "открой телегу"
 echo Тесты:     build\agent_tests.exe
+echo Сценарии:  build\agent_scenarios.exe
+echo Экспорты:  dumpbin /exports build\AgentRuntime.dll  (должно быть 15 функций agent_*)
 popd
 endlocal

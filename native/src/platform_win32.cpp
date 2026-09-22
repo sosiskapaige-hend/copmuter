@@ -24,6 +24,8 @@
 #include <windows.h>   // NOLINT
 #include <d3d11.h>     // NOLINT  (DXGI Desktop Duplication)
 #include <dxgi1_2.h>   // NOLINT
+#include <endpointvolume.h>   // NOLINT  (Core Audio: системная громкость)
+#include <mmdeviceapi.h>      // NOLINT
 #include <psapi.h>     // NOLINT
 #include <shlobj.h>    // NOLINT
 #include <shellapi.h>  // NOLINT
@@ -143,108 +145,74 @@ WORD vk_for(std::string_view key) {
 
 // ---------------------------------------------------------------------------
 //  Core Audio: установка/чтение системной громкости
+//
+//  Используем настоящие интерфейсы (mmdeviceapi.h / endpointvolume.h), а не
+//  самодельные описания vtable: порядок методов в COM-интерфейсе — часть ABI,
+//  и угадывать его нельзя.
 // ---------------------------------------------------------------------------
+namespace {
+
+// COM инициализируется на время вызова; если поток уже инициализирован в другом
+// режиме — просто работаем без парной деинициализации.
+class ComScope {
+public:
+    ComScope() {
+        const HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        owned_ = SUCCEEDED(hr);
+    }
+    ~ComScope() {
+        if (owned_) CoUninitialize();
+    }
+    ComScope(const ComScope&) = delete;
+    ComScope& operator=(const ComScope&) = delete;
+
+private:
+    bool owned_ = false;
+};
+
+IAudioEndpointVolume* default_endpoint_volume() {
+    IMMDeviceEnumerator* enumerator = nullptr;
+    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_INPROC_SERVER,
+                                __uuidof(IMMDeviceEnumerator),
+                                reinterpret_cast<void**>(&enumerator))) ||
+        !enumerator)
+        return nullptr;
+    IMMDevice* device = nullptr;
+    IAudioEndpointVolume* volume = nullptr;
+    if (SUCCEEDED(enumerator->GetDefaultAudioEndpoint(eRender, eMultimedia, &device)) && device) {
+        if (FAILED(device->Activate(__uuidof(IAudioEndpointVolume), CLSCTX_INPROC_SERVER, nullptr,
+                                    reinterpret_cast<void**>(&volume))))
+            volume = nullptr;
+        device->Release();
+    }
+    enumerator->Release();
+    return volume;
+}
+
+}  // namespace
+
 bool set_volume_com(int percent) {
-    // Через WinMM-апплет (waveOutSetVolume меняет только своё устройство) — не годится.
-    // Используем Core Audio; если COM недоступен, честно возвращаем false.
-    typedef HRESULT(WINAPI * PFN_CoCreateInstance)(REFCLSID, LPUNKNOWN, DWORD, REFIID, LPVOID*);
-    const HMODULE ole = LoadLibraryW(L"ole32.dll");
-    if (!ole) return false;
-    const auto create = reinterpret_cast<PFN_CoCreateInstance>(
-        GetProcAddress(ole, "CoCreateInstance"));
-    if (!create) {
-        FreeLibrary(ole);
-        return false;
-    }
-    static const CLSID clsid_mmde = {0xBCDE0395, 0xE52F, 0x467C, {0x8E, 0x3D, 0xC4, 0x57, 0x92, 0x91, 0x69, 0x2E}};
-    static const IID iid_enumerator = {0xA95664D2, 0x9614, 0x4F35, {0xA7, 0x46, 0xDE, 0x8D, 0xB6, 0x36, 0x17, 0xE6}};
-    static const IID iid_endpoint_volume = {0x5CDF2C82, 0x841E, 0x4546, {0x97, 0x22, 0x0C, 0xF7, 0x40, 0x78, 0x22, 0x9A}};
-    void* enumerator = nullptr;
-    if (FAILED(create(clsid_mmde, nullptr, CLSCTX_INPROC_SERVER, iid_enumerator, &enumerator)))
-        return false;
-    // Структуры COM объявляем вручную: экономим зависимость от mmdeviceapi.h.
-    struct IUnknownLike {
-        virtual HRESULT QueryInterface(REFIID, void**) = 0;
-        virtual ULONG AddRef() = 0;
-        virtual ULONG Release() = 0;
-    };
-    struct IDeviceCollection : IUnknownLike {
-        virtual HRESULT EnumAudioEndpoints(int, DWORD, void**) = 0;
-        virtual HRESULT GetDefaultAudioEndpoint(int, int, void**) = 0;
-    };
-    struct IEndpointVolume : IUnknownLike {
-        virtual HRESULT vtbl_pad[11];
-        virtual HRESULT GetMasterVolumeLevelScalar(float*) = 0;
-        virtual HRESULT SetMasterVolumeLevelScalar(float, const GUID*) = 0;
-        virtual HRESULT GetMute(BOOL*) = 0;
-        virtual HRESULT SetMute(BOOL, const GUID*) = 0;
-    };
-    auto* coll = reinterpret_cast<IDeviceCollection*>(enumerator);
-    void* device = nullptr;
-    bool ok = false;
-    if (coll && SUCCEEDED(coll->GetDefaultAudioEndpoint(0 /*eRender*/, 1 /*eMultimedia*/, &device)) &&
-        device) {
-        auto* dev = reinterpret_cast<IUnknownLike*>(device);
-        void* vol = nullptr;
-        if (SUCCEEDED(dev->QueryInterface(iid_endpoint_volume, &vol)) && vol) {
-            auto* ev = reinterpret_cast<IEndpointVolume*>(vol);
-            const float v = float(percent) / 100.0f;
-            ok = SUCCEEDED(ev->SetMasterVolumeLevelScalar(v, nullptr));
-            ev->Release();
-        }
-        dev->Release();
-    }
-    if (coll) coll->Release();
-    FreeLibrary(ole);
+    // waveOutSetVolume меняет только «своё» устройство — для системной громкости не годится.
+    ComScope com;
+    IAudioEndpointVolume* volume = default_endpoint_volume();
+    if (!volume) return false;
+    const float value = float(percent < 0 ? 0 : (percent > 100 ? 100 : percent)) / 100.0f;
+    const bool ok = SUCCEEDED(volume->SetMasterVolumeLevelScalar(value, nullptr));
+    volume->Release();
     return ok;
 }
 
 int get_volume_com() {
-    HMODULE ole = LoadLibraryW(L"ole32.dll");
-    if (!ole) return -1;
-    auto create = reinterpret_cast<HRESULT(WINAPI*)(REFCLSID, LPUNKNOWN, DWORD, REFIID, LPVOID*)>(
-        GetProcAddress(ole, "CoCreateInstance"));
-    if (!create) {
-        FreeLibrary(ole);
-        return -1;
-    }
-    static const CLSID clsid_mmde = {0xBCDE0395, 0xE52F, 0x467C, {0x8E, 0x3D, 0xC4, 0x57, 0x92, 0x91, 0x69, 0x2E}};
-    static const IID iid_enumerator = {0xA95664D2, 0x9614, 0x4F35, {0xA7, 0x46, 0xDE, 0x8D, 0xB6, 0x36, 0x17, 0xE6}};
-    static const IID iid_endpoint_volume = {0x5CDF2C82, 0x841E, 0x4546, {0x97, 0x22, 0x0C, 0xF7, 0x40, 0x78, 0x22, 0x9A}};
-    void* enumerator = nullptr;
-    if (FAILED(create(clsid_mmde, nullptr, CLSCTX_INPROC_SERVER, iid_enumerator, &enumerator)))
-        return -1;
-    struct IUnknownLike {
-        virtual HRESULT QueryInterface(REFIID, void**) = 0;
-        virtual ULONG AddRef() = 0;
-        virtual ULONG Release() = 0;
-    };
-    struct IDeviceCollection : IUnknownLike {
-        virtual HRESULT EnumAudioEndpoints(int, DWORD, void**) = 0;
-        virtual HRESULT GetDefaultAudioEndpoint(int, int, void**) = 0;
-    };
-    struct IEndpointVolume : IUnknownLike {
-        virtual HRESULT vtbl_pad[11];
-        virtual HRESULT GetMasterVolumeLevelScalar(float*) = 0;
-    };
-    auto* coll = reinterpret_cast<IDeviceCollection*>(enumerator);
-    void* device = nullptr;
-    int result = -1;
-    if (coll && SUCCEEDED(coll->GetDefaultAudioEndpoint(0, 1, &device)) && device) {
-        auto* dev = reinterpret_cast<IUnknownLike*>(device);
-        void* vol = nullptr;
-        if (SUCCEEDED(dev->QueryInterface(iid_endpoint_volume, &vol)) && vol) {
-            float v = 0.0f;
-            if (SUCCEEDED(reinterpret_cast<IEndpointVolume*>(vol)->GetMasterVolumeLevelScalar(&v)))
-                result = int(v * 100.0f + 0.5f);
-            reinterpret_cast<IUnknownLike*>(vol)->Release();
-        }
-        dev->Release();
-    }
-    if (coll) coll->Release();
-    FreeLibrary(ole);
-    return result;
+    ComScope com;
+    IAudioEndpointVolume* volume = default_endpoint_volume();
+    if (!volume) return -1;
+    float value = 0.0f;
+    const bool ok = SUCCEEDED(volume->GetMasterVolumeLevelScalar(&value));
+    volume->Release();
+    if (!ok) return -1;
+    return int(value * 100.0f + 0.5f);
 }
+
 
 }  // namespace
 

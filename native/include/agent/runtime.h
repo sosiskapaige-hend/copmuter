@@ -17,6 +17,7 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -54,6 +55,9 @@ struct RuntimeConfig {
     std::string ai_socket;             // \\.\pipe\agent_ai_v1 | /tmp/agent_ai.sock
     int llm_timeout_ms = 120000;       // сколько ждём план модели
     int max_steps = 12;                // лимит шагов агентного цикла
+    // Сколько ждать ответа пользователя на «подтвердите опасное действие».
+    // 0 — не ждать: без ответа опасное действие НЕ выполняется (безопасно по умолчанию).
+    int confirm_timeout_ms = 0;
 };
 
 // Событие для UI/IPC: то же, что видит пользователь («Открываю Telegram», ошибка...).
@@ -142,6 +146,14 @@ public:
     std::string state_json() const;              // computer state (окно/процессы/курсор/экраны)
     std::string tools_json() const;
     void set_cancel(std::function<bool()> fn);   // «Стоп» на уровне исполнителя
+    // Подтверждение опасных действий. Если обработчик задан (UI), он и решает;
+    // иначе рантайм ждёт ответа через answer_confirmation() до confirm_timeout_ms.
+    using ConfirmFn = std::function<bool(const std::string& question, int timeout_ms)>;
+    void set_confirm_handler(ConfirmFn fn);
+    // Ответ на «подтвердите»: вызывается из UI-потока, когда пользователь нажал кнопку.
+    void answer_confirmation(bool approved);
+    // Есть ли сейчас ожидающий вопрос (для UI: показать диалог).
+    bool confirmation_pending() const;
 
 private:
     // --- выполнение отдельных намерений (быстрый путь) ---
@@ -181,7 +193,7 @@ private:
                            bool& finished);
     bool needs_confirmation(const ToolSpec& tool, const Intent& it, std::string& reason) const;
     bool verify_action(const ActionSpec& a, std::string& detail);
-    bool ask_user(std::string_view question, std::string& reason) const;   // через UI/IPC
+    bool ask_user(std::string_view question, std::string& reason);   // через UI/IPC
     std::string resolve_place(std::string_view place) const;
     std::string resolve_target_path(std::string_view target, std::string_view place,
                                     bool must_exist, bool& found) const;
@@ -204,6 +216,11 @@ private:
     EventFn sink_;
     std::atomic<bool> running_{false};
     std::function<bool()> cancel_;
+    ConfirmFn confirm_fn_;
+    mutable std::mutex confirm_mu_;
+    mutable std::condition_variable confirm_cv_;
+    mutable bool confirm_pending_ = false;
+    mutable bool confirm_answer_ = false;
     std::unique_ptr<AiLink> ai_link_;   // постоянное соединение с Python-мозгом
     struct Counters {
         std::atomic<uint64_t> tasks{0}, tasks_ok{0}, fast_tasks{0}, agent_tasks{0};
@@ -238,5 +255,9 @@ void agent_free(char* ptr);
 // Подписка на события: callback вызывается из рабочих потоков (нужен C#-маршаллинг).
 typedef void (*agent_event_fn)(const char* event_json, void* user);
 void agent_set_event_sink(agent_event_fn fn, void* user);
+// Ответ пользователя на «подтвердите опасное действие» (1 — да, 0 — нет).
+void agent_answer_confirmation(int32_t approved);
+// Сколько миллисекунд рантайм ждёт ответа (0 — не ждать и не выполнять).
+void agent_set_confirm_timeout(int32_t timeout_ms);
 void agent_cancel_current();
 }

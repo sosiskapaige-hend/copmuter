@@ -5,9 +5,11 @@
 //   agent_host --metrics
 //   agent_host --ai /tmp/agent_ai.sock --task "напиши калькулятор на python"
 //   agent_host --ai /tmp/agent_ai.sock --ask "просто спроси план (отладка)"
+//   agent_host --confirm "удали папку 123 с рабочего стола"   # спросит в терминале
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -19,7 +21,10 @@ namespace {
 void usage() {
     std::printf(
         "agent_host [--state-dir DIR] [--no-preload] [--preview] [--metrics] [--tools]\n"
-        "           [--ai SOCKET] [--ask TEXT] [текст команды...]\n");
+        "           [--ai SOCKET] [--ask TEXT] [--confirm] [текст команды...]\n"
+        "           [--safety MODE]\n"
+        "  --confirm   спрашивать в терминале перед опасным действием (удаление и т.п.)\n"
+        "  --safety    full|auto|confirm|step|observe|plan_only (по умолчанию auto)\n");
 }
 
 }  // namespace
@@ -32,6 +37,7 @@ int main(int argc, char** argv) {
     bool task_mode = false;
     bool metrics = false;
     bool tools = false;
+    bool confirm = false;
     int task_steps = 0;
     std::vector<std::string> words;
     for (int i = 1; i < argc; ++i) {
@@ -41,6 +47,8 @@ int main(int argc, char** argv) {
         else if (arg == "--preview") preview = true;
         else if (arg == "--metrics") metrics = true;
         else if (arg == "--tools") tools = true;
+        else if (arg == "--confirm") confirm = true;
+        else if (arg == "--safety" && i + 1 < argc) cfg.safety_mode = argv[++i];
         else if (arg == "--steps" && i + 1 < argc) task_steps = std::atoi(argv[++i]);
         else if (arg == "--ai" && i + 1 < argc) { socket = argv[++i]; cfg.ai_socket = socket; }
         else if (arg == "--task") task_mode = true;
@@ -50,6 +58,19 @@ int main(int argc, char** argv) {
     }
 
     agent::AgentRuntime runtime(cfg, agent::make_platform());
+    if (confirm) {
+        // Ручная проверка без UI: вопрос в терминале, ответ «д/н» решает судьбу действия.
+        runtime.set_confirm_handler([](const std::string& question, int) {
+            std::printf("%s [д/н]: ", question.c_str());
+            std::fflush(stdout);
+            std::string line;
+            if (!std::getline(std::cin, line)) return false;
+            // Ответ «д…»/«y…»/«1…» — согласие; всё остальное (в т.ч. Enter) — отказ.
+            return line.rfind("д", 0) == 0 || line.rfind("Д", 0) == 0 ||
+                   line.rfind("y", 0) == 0 || line.rfind("Y", 0) == 0 ||
+                   line.rfind("l", 0) == 0 || line.rfind("1", 0) == 0;
+        });
+    }
     runtime.set_event_sink([](const agent::Event& ev) {
         std::printf("[%s] %s %s (%d мс)\n", ev.status.c_str(), ev.tool.c_str(), ev.message.c_str(),
                     int(ev.ms));

@@ -3,6 +3,7 @@
 #
 #   ./native/build_linux.sh          — ядро + тесты + хост в native/build/
 #   ./native/build_linux.sh --run    — то же и сразу прогнать тесты и бенчмарк
+#   ./native/build_linux.sh --cross  — плюс кросс-проверка Windows-сборки (нужен zig)
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -41,6 +42,13 @@ echo "== agent_host"
 $CXX $CXXFLAGS -Iinclude src/host_main.cpp "${CORE_SOURCES[@]}" -lpthread -o "$BUILD/agent_host"
 
 echo "готово: $BUILD/agent_tests, $BUILD/agent_scenarios, $BUILD/agent_host"
+
+if [[ "${1:-}" == "--cross" ]]; then
+  echo
+  # Windows-код здесь не запустить, но можно убедиться, что он компилируется и
+  # линкуется под x86_64-windows, а DLL отдаёт ровно тот C ABI, что ждёт C#.
+  ./build_windows_cross.sh
+fi
 
 if [[ "${1:-}" == "--run" ]]; then
   echo

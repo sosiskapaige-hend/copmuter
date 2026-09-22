@@ -439,13 +439,56 @@ bool AgentRuntime::verify_action(const ActionSpec& a, std::string& detail) {
     return true;
 }
 
-bool AgentRuntime::ask_user(std::string_view question, std::string& reason) const {
-    // Подтверждение приходит из UI через C API/IPC. Пока ответа нет, опасные
-    // действия НЕ выполняются — безопасное поведение по умолчанию.
-    const_cast<AgentRuntime*>(this)->emit(Event{"confirm", "", "pending",
-                                                std::string(question), "", 0.0, now_ms()});
-    reason = "требуется подтверждение пользователя";
-    return false;
+void AgentRuntime::set_confirm_handler(ConfirmFn fn) { confirm_fn_ = std::move(fn); }
+
+void AgentRuntime::answer_confirmation(bool approved) {
+    {
+        std::lock_guard<std::mutex> lock(confirm_mu_);
+        if (!confirm_pending_) return;
+        confirm_answer_ = approved;
+        confirm_pending_ = false;
+    }
+    confirm_cv_.notify_all();
+}
+
+bool AgentRuntime::confirmation_pending() const {
+    std::lock_guard<std::mutex> lock(confirm_mu_);
+    return confirm_pending_;
+}
+
+// Подтверждение опасного действия. Три случая:
+//   * UI подставил обработчик — решает он (диалог в оболочке);
+//   * обработчика нет, но задан confirm_timeout_ms — ждём ответа через
+//     answer_confirmation() (оболочка показывает диалог по событию «confirm»);
+//   * ждать не настроено — опасное действие НЕ выполняется.
+// Молчание всегда трактуется как отказ: это единственное безопасное поведение.
+bool AgentRuntime::ask_user(std::string_view question, std::string& reason) {
+    const std::string text(question);
+    emit(Event{"confirm", "", "pending", text, "", 0.0, now_ms()});
+    if (confirm_fn_) {
+        if (confirm_fn_(text, cfg_.confirm_timeout_ms)) return true;
+        reason = "пользователь отказался";
+        emit(Event{"confirm", "", "denied", "Действие отменено пользователем", "", 0.0, now_ms()});
+        return false;
+    }
+    if (cfg_.confirm_timeout_ms <= 0) {
+        reason = "требуется подтверждение пользователя";
+        return false;
+    }
+    std::unique_lock<std::mutex> lock(confirm_mu_);
+    confirm_pending_ = true;
+    confirm_answer_ = false;
+    const bool answered = confirm_cv_.wait_for(lock, std::chrono::milliseconds(cfg_.confirm_timeout_ms),
+                                               [this] { return !confirm_pending_; });
+    const bool approved = answered && confirm_answer_;
+    confirm_pending_ = false;
+    if (!approved) {
+        reason = answered ? "пользователь отказался" : "ответа на подтверждение не было";
+        emit(Event{"confirm", "", "denied", reason, "", 0.0, now_ms()});
+        return false;
+    }
+    emit(Event{"confirm", "", "approved", "Подтверждено пользователем", "", 0.0, now_ms()});
+    return true;
 }
 
 bool AgentRuntime::needs_confirmation(const ToolSpec& tool, const Intent& it,

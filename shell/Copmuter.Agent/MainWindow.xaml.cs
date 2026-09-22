@@ -1,6 +1,7 @@
 using Copmuter.Agent.Models;
 using Copmuter.Agent.ViewModels;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Windows.System;
 
@@ -14,12 +15,29 @@ public sealed partial class MainWindow : Window
         ViewModel = new ChatViewModel(new AgentSettings());
         InitializeComponent();
         Closed += (_, _) => ViewModel.Shutdown();
+        ViewModel.ConfirmationRequested += OnConfirmationRequestedAsync;
         ViewModel.Start();
     }
 
     public ChatViewModel ViewModel { get; }
 
     private async void OnSendClick(object sender, RoutedEventArgs e) => await ViewModel.SendAsync();
+
+    // Диалог подтверждения: рантайм держит опасное действие на паузе, ждём ответ.
+    private async void OnConfirmationRequestedAsync(object? sender, string question)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = "Подтвердите действие",
+            Content = question,
+            PrimaryButtonText = "Выполнить",
+            CloseButtonText = "Отмена",
+            DefaultButton = ContentDialogButton.Close,   // Enter не должен удалять
+            XamlRoot = Content.XamlRoot,
+        };
+        var result = await dialog.ShowAsync();
+        ViewModel.AnswerConfirmation(result == ContentDialogResult.Primary);
+    }
 
     private void OnStopClick(object sender, RoutedEventArgs e) => ViewModel.Stop();
 

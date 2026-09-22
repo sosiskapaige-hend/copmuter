@@ -133,6 +133,16 @@ public sealed class ChatViewModel : ObservableObject
         Status = "Останавливаю";
     }
 
+    /// <summary>Рантайм спрашивает разрешение на опасное действие (удаление и т.п.).</summary>
+    public event EventHandler<string>? ConfirmationRequested;
+
+    /// <summary>Ответ пользователя из диалога. Молчание/закрытие = отказ.</summary>
+    public void AnswerConfirmation(bool approved)
+    {
+        _runtime.AnswerConfirmation(approved);
+        Status = approved ? "Подтверждено" : "Отменено";
+    }
+
     public void Shutdown()
     {
         _uiPump.Dispose();
@@ -158,6 +168,19 @@ public sealed class ChatViewModel : ObservableObject
     {
         while (_pending.TryDequeue(out var ev))
         {
+            if (ev.Kind == "confirm")
+            {
+                if (ev.Status == "pending")
+                {
+                    // Опасное действие на паузе: спрашиваем пользователя, исполнение ждёт.
+                    ConfirmationRequested?.Invoke(this, ev.Message);
+                }
+                else
+                {
+                    Status = ev.Message;
+                }
+                continue;
+            }
             if (ev.Kind == "tool_call" || ev.Kind == "observation")
             {
                 // Инструменты показываем строкой, а не отдельными пузырями: чат не должен

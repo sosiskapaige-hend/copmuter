@@ -88,6 +88,7 @@ agent::RuntimeConfig parse_config(const std::string& json) {
     cfg.ai_socket = json_string(json, "ai_socket", cfg.ai_socket);
     cfg.llm_timeout_ms = json_int(json, "llm_timeout_ms", cfg.llm_timeout_ms);
     cfg.max_steps = json_int(json, "max_steps", cfg.max_steps);
+    cfg.confirm_timeout_ms = json_int(json, "confirm_timeout_ms", cfg.confirm_timeout_ms);
     return cfg;
 }
 
@@ -225,6 +226,16 @@ AGENT_EXPORT void agent_set_event_sink(void (*fn)(const char*, void*), void* use
         const std::string json_ev = ev.to_json();
         fn(json_ev.c_str(), user);
     });
+}
+
+AGENT_EXPORT void agent_answer_confirmation(int32_t approved) {
+    std::lock_guard<std::mutex> lock(g_mu);
+    if (g_runtime) g_runtime->answer_confirmation(approved != 0);
+}
+
+AGENT_EXPORT void agent_set_confirm_timeout(int32_t timeout_ms) {
+    std::lock_guard<std::mutex> lock(g_mu);
+    if (g_runtime) g_runtime->config().confirm_timeout_ms = timeout_ms;
 }
 
 AGENT_EXPORT void agent_cancel_current() {
