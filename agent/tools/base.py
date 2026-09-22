@@ -61,6 +61,13 @@ class ToolContext:
     llm: Any
     workdir: str = "."
     session_note: str = ""
+    # Новые подсистемы (реестр приложений, состояние ПК, ожидания, ввод, зрение,
+    # оптимизатор, метрики). Доступ через ctx.services.get("ключ") — так инструменты
+    # остаются совместимыми, если слой ещё не собран (например, в тестах).
+    services: dict = field(default_factory=dict)
+
+    def service(self, name: str, default: Any = None) -> Any:
+        return (self.services or {}).get(name, default)
 
     def screenshot_cache(self) -> str | None:
         return getattr(self, "_last_screenshot", None)

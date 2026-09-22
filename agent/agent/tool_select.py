@@ -65,8 +65,29 @@ CATEGORY_HINTS: dict[str, tuple[str, ...]] = {
 # Базовый приоритет категорий при добивке бюджета.
 CATEGORY_BASE: dict[str, int] = {
     "fs": 30, "terminal": 28, "apps": 26, "meta": 24, "system": 20, "screen": 12,
-    "browser": 10, "vision": 9, "git": 8, "window": 7, "input": 6, "os": 5, "clipboard": 4,
+    "browser": 16, "vision": 9, "git": 8, "window": 13, "input": 6, "os": 5,
+    "clipboard": 4, "shell": 18,
 }
+
+# Инструменты-«синонимы»: у них есть рабочий основной аналог
+# (fs_mkdir ↔ create_folder, keyboard_type ↔ type_text, open_url ↔ open_default_browser…).
+# Они полезны быстрому слою и человеку, но не должны вытеснять основные инструменты
+# из бюджета схем, который уходит модели.
+DUPLICATE_TOOLS: frozenset[str] = frozenset({
+    "create_folder", "create_file", "write_code", "save_file", "open_file", "open_folder",
+    "delete_file", "delete_folder", "copy_file", "move_file", "clipboard_get",
+    "clipboard_set", "kill_process", "read_processes", "search_web", "open_default_browser",
+    "launch_application", "type_text", "press_key", "move_mouse", "double_click",
+    "click_on_screen", "find_on_screen", "take_screenshot", "read_screen", "open_browser",
+    "browser_scroll", "run_terminal_command",
+})
+DUPLICATE_PENALTY = 55
+
+
+def _hint_hit(text: str, hint: str) -> bool:
+    """Подсказка категории ищется с начала слова: «верни» не должно находиться
+    внутри «сверни», «папк» — находиться в «папку» (это основа слова)."""
+    return re.search(rf"(?<![а-яёa-z0-9]){re.escape(hint)}", text) is not None
 
 
 def _mentions(text: str, name: str) -> bool:
@@ -94,7 +115,7 @@ def select_tools(goal: str, plan_text: str, recent: Iterable[str], pinned: Itera
 
     cat_hits: dict[str, int] = {}
     for cat, hints in CATEGORY_HINTS.items():
-        cat_hits[cat] = sum(1 for h in hints if h in text)
+        cat_hits[cat] = sum(1 for h in hints if _hint_hit(text, h))
 
     scored: list[tuple[int, str, object]] = []
     for t in tools:
@@ -108,6 +129,8 @@ def select_tools(goal: str, plan_text: str, recent: Iterable[str], pinned: Itera
         if t.name in recent:
             s += 80
         s += 12 * min(cat_hits.get(t.category, 0), 4)
+        if getattr(t, "is_alias", False) or t.name in DUPLICATE_TOOLS:
+            s -= DUPLICATE_PENALTY
         if not has_display and t.category in ("window", "input", "screen") \
                 and t.name not in ("screen_capture", "screen_describe"):
             s -= 60

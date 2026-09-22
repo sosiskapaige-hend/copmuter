@@ -279,11 +279,34 @@ def register_app_tools(reg: ToolRegistry) -> None:
                 else ToolResult.fail(f"нет xdg-open/open: {r.stderr.strip()}")
 
     @reg.tool("list_apps",
-              "Список приложений, которые агент умеет запускать по имени (регистр + PATH).",
+              "Список приложений, которые агент умеет запускать по имени (реестр приложений + PATH).",
               risk=Risk.NONE, category="apps",
-              parameters={"type": "object", "properties": {}})
+              parameters={"type": "object", "properties": {
+                  "query": _prop("string", "Фильтр по названию/алиасу (необязательно)"),
+                  "limit": _prop("integer", "Сколько строк показать")}, "required": []})
     class ListApps(Tool):
-        async def execute(self, ctx: ToolContext) -> ToolResult:
+        async def execute(self, ctx: ToolContext, query: str = "", limit: int = 60) -> ToolResult:
+            registry = ctx.service("apps")
+            if registry is not None:
+                recs = registry.all()
+                q = (query or "").strip().lower()
+                if q:
+                    recs = [r for r in recs
+                            if q in r.key.lower() or q in (r.display_name or "").lower()
+                            or any(q in a.lower() for a in r.aliases)]
+                installed = [r for r in recs if r.installed]
+                known = [r for r in recs if not r.installed]
+                lines = [f"Установленные ({len(installed)}):"]
+                for r in sorted(installed, key=lambda x: x.display_name)[:max(1, limit)]:
+                    lines.append(f"- {r.display_name} ({r.key}) — {r.confirmed_path() or 'путь не найден'}")
+                if known:
+                    lines.append(f"Известные в каталоге ({len(known)}):")
+                    lines += [f"- {r.display_name} ({r.key})" for r in
+                              sorted(known, key=lambda x: x.display_name)[:max(1, limit)]]
+                lines.append("Подсказка: find_app(\"телега\") покажет путь и способы запуска.")
+                return ToolResult.ok_result("\n".join(lines), method="app_registry",
+                                            counts={"installed": len(installed),
+                                                    "known": len(known)})
             apps = {**_DEFAULTS, **(ctx.cfg.apps or {})}
             lines = [f"- {k}" for k in sorted(apps)]
             extra = []

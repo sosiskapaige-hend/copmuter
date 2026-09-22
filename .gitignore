@@ -5,3 +5,11 @@ __pycache__/
 .pytest_cache/
 .agent-home/
 node_modules/
+bin/
+obj/
+*.o
+*.so
+*.dll
+*.exe
+*.pdb
+.vs/
