@@ -4,6 +4,8 @@
 #include <sstream>
 
 #include "agent/intent.h"
+#include <filesystem>
+
 #include "agent/runtime.h"
 #include "agent/util.h"
 
@@ -439,6 +441,40 @@ bool AgentRuntime::verify_action(const ActionSpec& a, std::string& detail) {
     return true;
 }
 
+std::string AgentRuntime::debug_log_path() const {
+    if (!cfg_.debug_log_path.empty()) return cfg_.debug_log_path;
+    if (cfg_.state_dir.empty()) return {};
+    return join_path(cfg_.state_dir, "agent_debug.log");
+}
+
+// Отладочный журнал: обычный текст, одна строка на событие, со временем.
+// Нужен, чтобы разбирать «почему команда пошла не туда» без отладчика. Если файл
+// открыть не удалось — журнал молча выключается, но команды продолжают работать
+// (отладка не имеет права ломать выполнение).
+void AgentRuntime::debug(std::string_view area, std::string_view text) {
+    if (!cfg_.debug_log || debug_disabled_) return;
+    std::lock_guard<std::mutex> lock(debug_mu_);
+    if (!debug_out_.is_open()) {
+        const std::string path = debug_log_path();
+        if (path.empty()) {
+            debug_disabled_ = true;
+            return;
+        }
+        const size_t slash = path.find_last_of("/\\");
+        if (slash != std::string::npos) {
+            std::error_code ec;
+            std::filesystem::create_directories(path.substr(0, slash), ec);
+        }
+        debug_out_.open(path, std::ios::app | std::ios::binary);
+        if (!debug_out_.is_open()) {
+            debug_disabled_ = true;   // один раз не получилось — больше не пытаемся
+            return;
+        }
+    }
+    debug_out_ << '[' << wall_clock_text() << "][" << area << "] " << text << '\n';
+    debug_out_.flush();               // падение процесса не должно съедать журнал
+}
+
 void AgentRuntime::set_confirm_handler(ConfirmFn fn) { confirm_fn_ = std::move(fn); }
 
 void AgentRuntime::answer_confirmation(bool approved) {
@@ -464,10 +500,12 @@ bool AgentRuntime::confirmation_pending() const {
 // Молчание всегда трактуется как отказ: это единственное безопасное поведение.
 bool AgentRuntime::ask_user(std::string_view question, std::string& reason) {
     const std::string text(question);
+    debug("confirm", "спрашиваю: " + text);
     emit(Event{"confirm", "", "pending", text, "", 0.0, now_ms()});
     if (confirm_fn_) {
         if (confirm_fn_(text, cfg_.confirm_timeout_ms)) return true;
         reason = "пользователь отказался";
+        debug("confirm", "отказано (обработчик UI)");
         emit(Event{"confirm", "", "denied", "Действие отменено пользователем", "", 0.0, now_ms()});
         return false;
     }
@@ -484,6 +522,7 @@ bool AgentRuntime::ask_user(std::string_view question, std::string& reason) {
     confirm_pending_ = false;
     if (!approved) {
         reason = answered ? "пользователь отказался" : "ответа на подтверждение не было";
+        debug("confirm", reason);
         emit(Event{"confirm", "", "denied", reason, "", 0.0, now_ms()});
         return false;
     }

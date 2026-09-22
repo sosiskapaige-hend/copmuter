@@ -1089,6 +1089,51 @@ static void test_frame_crop() {
 }
 
 // ---------------------------------------------------------------------------
+//  Журнал отладки: «почему команда пошла не туда» без отладчика
+// ---------------------------------------------------------------------------
+static void test_debug_log() {
+    group("журнал отладки: решения роутера, инструменты, отказы");
+    const std::string dir = "/tmp/agent_debug_state";
+    fs::remove_all(dir);
+
+    auto platform = std::make_unique<MockPlatform>();
+    MockPlatform* plat = platform.get();
+    plat->files["/home/tester/Desktop/123"] = "<dir>";
+    RuntimeConfig cfg;
+    cfg.preload = false;
+    cfg.state_dir = dir;
+    cfg.debug_log = true;
+    AgentRuntime rt(cfg, std::move(platform));
+    std::string error;
+    rt.start(error);
+    check(rt.debug_log_path() == dir + "/agent_debug.log",
+          "журнал лежит в каталоге состояния: " + rt.debug_log_path());
+
+    rt.execute("открой телегу");
+    RuntimeConfig cfg2 = cfg;   // у второго рантайма журнал выключен
+    cfg2.debug_log = false;
+    cfg2.state_dir = dir + "_off";
+    auto platform2 = std::make_unique<MockPlatform>();
+    AgentRuntime rt2(cfg2, std::move(platform2));
+    rt2.start(error);
+    rt2.execute("открой телегу");
+    check(!fs::exists(dir + "_off/agent_debug.log"), "при выключенном журнале файла нет");
+
+    rt.run_tool("delete_path", R"({"path":"/home/tester/Desktop/нет-такого"})");
+
+    const std::string journal = read_text_file(rt.debug_log_path());
+    check(journal.find("[route]") != std::string::npos, "записано решение роутера: " + journal);
+    check(journal.find("action=launch_app") != std::string::npos, "видно распознанное намерение");
+    check(journal.find("[tool]") != std::string::npos && journal.find("delete_path") != std::string::npos,
+          "видно каждый вызов инструмента и его результат");
+    check(journal.find("fail") != std::string::npos, "неудача отмечена явно, а не замаскирована");
+    check(journal.find("мкс") != std::string::npos || journal.find("мс") != std::string::npos,
+          "во временах — маршрут и вызовы (главное для диагностики задержек)");
+    check(journal.find("не существует") != std::string::npos,
+          "в журнале есть причина отказа словами: " + journal.substr(0, 200));
+}
+
+// ---------------------------------------------------------------------------
 //  Полная сборка теста
 // ---------------------------------------------------------------------------
 int main(int argc, char** argv) {
@@ -1116,6 +1161,7 @@ int main(int argc, char** argv) {
         test_confirmation_flow();
         test_preview_paths();
         test_frame_crop();
+        test_debug_log();
         test_browser_path();
         test_cancel_stops_agent_loop();
         test_ipc();

@@ -40,6 +40,9 @@ inline int64_t now_ms() {
                Clock::now().time_since_epoch())
         .count();
 }
+// Время суток в миллисекундах: журнал отладки читают глазами, а не только скриптом.
+std::string wall_clock_text();
+
 inline double now_us() {
     return std::chrono::duration_cast<std::chrono::duration<double, std::micro>>(
                Clock::now().time_since_epoch())

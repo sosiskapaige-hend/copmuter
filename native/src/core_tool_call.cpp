@@ -92,6 +92,7 @@ std::string AgentRuntime::run_tool_impl(std::string_view tool_in, std::string_vi
         std::string reason;
         if (needs_confirmation(*spec, probe, reason)) {
             note_tool_call(tool, false, (now_us() - t0) / 1000.0);
+            debug("tool.blocked", std::string(tool) + " | остановлено пользователем");
             return std::string("{\"ok\":false,\"needs_confirmation\":true,\"tool\":\"") +
                    json_escape(tool) + "\",\"error\":\"требуется подтверждение: " +
                    json_escape(reason) + "\"}";
@@ -311,6 +312,9 @@ std::string AgentRuntime::run_tool_impl(std::string_view tool_in, std::string_vi
     bool ok = execute_intent(it, out);
     const double ms = (now_us() - t0) / 1000.0;
     note_tool_call(tool, ok, ms);
+    debug("tool", std::string(tool) + " | " + (ok ? "ok" : "fail") + " | " +
+                      std::to_string(int(ms)) + " мс" +
+                      (ok ? std::string() : (" | " + out.error)));
     output = out.message;
     std::string result = "{\"ok\":";
     result += ok ? "true" : "false";

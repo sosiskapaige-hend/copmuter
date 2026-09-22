@@ -129,6 +129,7 @@ std::string AgentRuntime::run_task(std::string_view task, int max_steps) {
         const double plan_t0 = now_us();
         AiReply reply = ai_link_->request(request, cfg_.llm_timeout_ms);
         const double plan_ms = (now_us() - plan_t0) / 1000.0;
+        debug("plan", "шаг " + std::to_string(step) + " | " + std::to_string(int(plan_ms)) + " мс");
         if (!reply.ok) {
             error = reply.error;
             if (!ai_link_->ensure_connected(error)) break;
@@ -141,6 +142,7 @@ std::string AgentRuntime::run_task(std::string_view task, int max_steps) {
         bool model_finished = false;
         if (!parse_plan(reply.json, calls, say, model_finished)) {
             error = "план модели не разобран";
+            debug("plan.error", error);
             break;
         }
         if (!say.empty())

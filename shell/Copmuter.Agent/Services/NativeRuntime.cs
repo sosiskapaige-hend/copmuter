@@ -159,6 +159,7 @@ public sealed class NativeRuntime : IDisposable
             ["max_retries"] = settings.MaxRetries,
             // Рантайм ждёт ответа диалога столько миллисекунд; 0 — не ждать вовсе.
             ["confirm_timeout_ms"] = settings.ConfirmTimeoutMs,
+            ["debug_log"] = settings.DebugLog,
         };
         var code = agent_init(JsonSerializer.Serialize(config));
         if (code != 0)

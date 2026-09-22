@@ -34,6 +34,15 @@ FastOutcome AgentRuntime::execute(std::string_view phrase) {
     out.route_us = now_us() - t0;
     out.route = route.kind;
     out.action = std::string(route.intent.action.view());
+    debug("route", std::string(to_string(route.kind)) + " | " + route.reason + " | action=" +
+                      out.action + " | " + std::to_string(out.route_us) + " мкс");
+    if (route.kind == RouteKind::Direct) {
+        // Разбор намерения виден в журнале: слоты, действие и цель.
+        debug("route.intent", route.intent.label() + " | target=«" +
+                                 route.intent.slot(SlotId::Target).str() + "» | place=«" +
+                                 route.intent.slot(SlotId::Place).str() + "» | url=«" +
+                                 route.intent.slot(SlotId::Url).str() + "»");
+    }
 
     if (route.kind != RouteKind::Direct) {
         out.handled = false;
@@ -61,6 +70,9 @@ FastOutcome AgentRuntime::execute(std::string_view phrase) {
     res.route_us = out.route_us;
     res.total_ms = (now_us() - t0) / 1000.0;
     count_task(res.ok, true, res.total_ms, res.route_us);
+    debug("direct", std::string(res.ok ? "ok" : "fail") + " | " + res.action + " | " +
+                        res.message + (res.error.empty() ? std::string() : (" | ошибка: " + res.error)) +
+                        " | " + std::to_string(res.total_ms) + " мс");
     return res;
 }
 
@@ -217,6 +229,9 @@ bool AgentRuntime::do_launch_app(const Intent& it, FastOutcome& out) {
         }
         attempt_ms = (now_us() - at0) / 1000.0;
         note_result("launch_app", ok, attempt_ms, m);
+        debug("launch", std::string(to_string(m)) + " | " + target + " | " +
+                            (ok ? "ok" : ("не вышло: " + detail)) + " | " +
+                            std::to_string(attempt_ms) + " мс");
         if (ok) {
             // Проверка результата (ТЗ §18).
             bool verified = true;
@@ -240,6 +255,8 @@ bool AgentRuntime::do_launch_app(const Intent& it, FastOutcome& out) {
             }
             if (app && !verified) {
                 last_error = "запуск не подтвердился";
+                debug("verify", "запуск не подтверждён способом " + std::string(to_string(m)) +
+                                    ", пробую следующий");
                 emit(Event{"fallback", "launch_application", "failed", last_error, "",
                            attempt_ms, now_ms()});
                 continue;                       // пробуем следующий способ

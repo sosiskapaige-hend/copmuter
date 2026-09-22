@@ -24,7 +24,8 @@ void usage() {
         "           [--ai SOCKET] [--ask TEXT] [--confirm] [текст команды...]\n"
         "           [--safety MODE]\n"
         "  --confirm   спрашивать в терминале перед опасным действием (удаление и т.п.)\n"
-        "  --safety    full|auto|confirm|step|observe|plan_only (по умолчанию auto)\n");
+        "  --safety    full|auto|confirm|step|observe|plan_only (по умолчанию auto)\n"
+        "  --debug     писать журнал отладки (state_dir/agent_debug.log)\n");
 }
 
 }  // namespace
@@ -49,6 +50,11 @@ int main(int argc, char** argv) {
         else if (arg == "--tools") tools = true;
         else if (arg == "--confirm") confirm = true;
         else if (arg == "--safety" && i + 1 < argc) cfg.safety_mode = argv[++i];
+        else if (arg == "--debug") cfg.debug_log = true;
+        else if (arg == "--debug-log" && i + 1 < argc) {
+            cfg.debug_log = true;
+            cfg.debug_log_path = argv[++i];
+        }
         else if (arg == "--steps" && i + 1 < argc) task_steps = std::atoi(argv[++i]);
         else if (arg == "--ai" && i + 1 < argc) { socket = argv[++i]; cfg.ai_socket = socket; }
         else if (arg == "--task") task_mode = true;

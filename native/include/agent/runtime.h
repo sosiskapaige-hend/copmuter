@@ -18,6 +18,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -58,6 +59,10 @@ struct RuntimeConfig {
     // Сколько ждать ответа пользователя на «подтвердите опасное действие».
     // 0 — не ждать: без ответа опасное действие НЕ выполняется (безопасно по умолчанию).
     int confirm_timeout_ms = 0;
+    // Журнал отладки (ТЗ): рефлексы, инструменты, откаты, ошибки — с временами.
+    // Пишется в state_dir/agent_debug.log, если включён (в UI не показывается).
+    bool debug_log = false;
+    std::string debug_log_path;
 };
 
 // Событие для UI/IPC: то же, что видит пользователь («Открываю Telegram», ошибка...).
@@ -154,6 +159,9 @@ public:
     void answer_confirmation(bool approved);
     // Есть ли сейчас ожидающий вопрос (для UI: показать диалог).
     bool confirmation_pending() const;
+    // Строка в отладочный журнал: [время][раздел] текст. Дёшево при выключенном журнале.
+    void debug(std::string_view area, std::string_view text);
+    std::string debug_log_path() const;
 
 private:
     // --- выполнение отдельных намерений (быстрый путь) ---
@@ -225,6 +233,9 @@ private:
     mutable std::condition_variable confirm_cv_;
     mutable bool confirm_pending_ = false;
     mutable bool confirm_answer_ = false;
+    mutable std::mutex debug_mu_;
+    std::ofstream debug_out_;
+    mutable bool debug_disabled_ = false;
     std::unique_ptr<AiLink> ai_link_;   // постоянное соединение с Python-мозгом
     struct Counters {
         std::atomic<uint64_t> tasks{0}, tasks_ok{0}, fast_tasks{0}, agent_tasks{0};

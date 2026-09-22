@@ -22,6 +22,7 @@ public sealed class AgentSettings : INotifyPropertyChanged
     private int _visionTimeoutMs = 20000;
     private int _maxRetries = 2;
     private int _confirmTimeoutMs = 30000;
+    private bool _debugLog;
 
     public string StateDir { get => _stateDir; set => Set(ref _stateDir, value); }
     public string SocketPath { get => _socketPath; set => Set(ref _socketPath, value); }
@@ -39,6 +40,8 @@ public sealed class AgentSettings : INotifyPropertyChanged
     public int MaxRetries { get => _maxRetries; set => Set(ref _maxRetries, value); }
     /// <summary>Сколько ждать ответа на «подтвердите опасное действие» (мс).</summary>
     public int ConfirmTimeoutMs { get => _confirmTimeoutMs; set => Set(ref _confirmTimeoutMs, value); }
+    /// <summary>Журнал отладки ядра: state_dir\agent_debug.log (для разбора проблем).</summary>
+    public bool DebugLog { get => _debugLog; set => Set(ref _debugLog, value); }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

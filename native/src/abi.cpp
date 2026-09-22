@@ -89,6 +89,8 @@ agent::RuntimeConfig parse_config(const std::string& json) {
     cfg.llm_timeout_ms = json_int(json, "llm_timeout_ms", cfg.llm_timeout_ms);
     cfg.max_steps = json_int(json, "max_steps", cfg.max_steps);
     cfg.confirm_timeout_ms = json_int(json, "confirm_timeout_ms", cfg.confirm_timeout_ms);
+    cfg.debug_log = json_bool(json, "debug_log", cfg.debug_log);
+    cfg.debug_log_path = json_string(json, "debug_log_path", cfg.debug_log_path);
     return cfg;
 }
 
