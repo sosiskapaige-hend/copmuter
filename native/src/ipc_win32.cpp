@@ -10,6 +10,7 @@
 #include <windows.h>  // NOLINT
 
 #include <chrono>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -61,13 +62,22 @@ struct AiLink::Impl {
         return true;
     }
 
-    bool read_all(char* data, size_t size, int timeout_ms) {
+    bool cancelled = false;   // выставляется, если сработал опрос «Стоп»
+
+    bool read_all(char* data, size_t size, int timeout_ms,
+                  const std::function<bool()>& cancel = {}) {
         size_t got = 0;
         const int64_t deadline = mono_ms() + (timeout_ms > 0 ? timeout_ms : 30000);
         while (got < size) {
             DWORD available = 0;
             if (!PeekNamedPipe(pipe, nullptr, 0, nullptr, &available, nullptr)) return false;
             if (available == 0) {
+                // Опрос «Стоп» идёт постоянно: ожидание ответа модели прерывается
+                // за десятки миллисекунд, а не через llm_timeout_ms.
+                if (cancel && cancel()) {
+                    cancelled = true;
+                    return false;
+                }
                 if (mono_ms() >= deadline) return false;
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
                 continue;
@@ -133,7 +143,8 @@ bool AiLink::ensure_connected(std::string& error) {
     return connect(address_, 3000, error);
 }
 
-AiReply AiLink::request(const std::string& json, int timeout_ms) {
+AiReply AiLink::request(const std::string& json, int timeout_ms,
+                        const std::function<bool()>& cancel) {
     AiReply reply;
     if (!impl_ || impl_->pipe == INVALID_HANDLE_VALUE) {
         reply.error = "нет соединения с воркером";
@@ -148,11 +159,17 @@ AiReply AiLink::request(const std::string& json, int timeout_ms) {
         close();
         return reply;
     }
+    impl_->cancelled = false;
     char len_buf[4];
-    if (!impl_->read_all(len_buf, 4, timeout_ms)) {
-        reply.error = "воркер не ответил вовремя";
+    if (!impl_->read_all(len_buf, 4, timeout_ms, cancel)) {
         reply.ms = double(mono_ms() - t0);
-        close();
+        if (impl_->cancelled) {
+            reply.cancelled = true;
+            reply.error = "остановлено пользователем";
+        } else {
+            reply.error = "воркер не ответил вовремя";
+        }
+        close();                    // ответ в пути не должен достаться следующему запросу
         return reply;
     }
     const uint32_t size = be32(len_buf);
@@ -162,9 +179,14 @@ AiReply AiLink::request(const std::string& json, int timeout_ms) {
         return reply;
     }
     reply.json.resize(size);
-    if (size && !impl_->read_all(reply.json.data(), size, timeout_ms)) {
-        reply.error = "ответ воркера оборвался";
+    if (size && !impl_->read_all(reply.json.data(), size, timeout_ms, cancel)) {
         reply.ms = double(mono_ms() - t0);
+        if (impl_->cancelled) {
+            reply.cancelled = true;
+            reply.error = "остановлено пользователем";
+        } else {
+            reply.error = "ответ воркера оборвался";
+        }
         close();
         return reply;
     }

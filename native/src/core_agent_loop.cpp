@@ -127,11 +127,19 @@ std::string AgentRuntime::run_task(std::string_view task, int max_steps) {
                                                     : "Уточняю план по результатам",
                    "", 0.0, now_ms()});
         const double plan_t0 = now_us();
-        AiReply reply = ai_link_->request(request, cfg_.llm_timeout_ms);
+        // «Стоп» действует и здесь: ожидание плана модели прерывается, а не висит
+        // до llm_timeout_ms (у локальной модели это десятки секунд).
+        AiReply reply = ai_link_->request(request, cfg_.llm_timeout_ms,
+                                          [this] { return cancel_ && cancel_(); });
         const double plan_ms = (now_us() - plan_t0) / 1000.0;
         debug("plan", "шаг " + std::to_string(step) + " | " + std::to_string(int(plan_ms)) + " мс");
         if (!reply.ok) {
             error = reply.error;
+            if (reply.cancelled) {
+                summary = "остановлено пользователем";
+                debug("plan.cancel", "план модели прерван по «Стоп»");
+                break;
+            }
             if (!ai_link_->ensure_connected(error)) break;
             continue;                       // один честный повтор на обрыв канала
         }

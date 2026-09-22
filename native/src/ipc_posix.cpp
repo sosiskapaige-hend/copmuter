@@ -9,8 +9,10 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <chrono>
+#include <functional>
 #include <cstring>
 #include <mutex>
 #include <thread>
@@ -57,15 +59,32 @@ struct AiLink::Impl {
         return true;
     }
 
-    bool read_all(char* data, size_t size, int timeout_ms) {
+    // cancelled выставляется, если сработал опрос «Стоп».
+    bool cancelled = false;
+
+    bool read_all(char* data, size_t size, int timeout_ms,
+                  const std::function<bool()>& cancel = {}) {
         size_t got = 0;
         const int64_t deadline = mono_ms() + (timeout_ms > 0 ? timeout_ms : 30000);
         while (got < size) {
-            pollfd pfd{fd, POLLIN, 0};
+            // Ждём короткими шагами: так «Стоп» замечается за десятки миллисекунд,
+            // а не только между запросами к модели.
+            const int slice = cancel ? 50 : 1000000;
             const int left = int(deadline - mono_ms());
             if (left <= 0) return false;
-            const int pr = ::poll(&pfd, 1, left);
-            if (pr <= 0) return false;
+            pollfd pfd{fd, POLLIN, 0};
+            const int pr = ::poll(&pfd, 1, std::min(left, slice));
+            if (pr == 0) {
+                if (cancel && cancel()) {
+                    cancelled = true;
+                    return false;
+                }
+                continue;                       // просто истёк срез ожидания
+            }
+            if (pr < 0) {
+                if (errno == EINTR) continue;
+                return false;
+            }
             const ssize_t n = ::recv(fd, data + got, size - got, 0);
             if (n <= 0) {
                 if (n < 0 && (errno == EINTR)) continue;
@@ -141,7 +160,8 @@ bool AiLink::ensure_connected(std::string& error) {
     return connect(address_, 3000, error);
 }
 
-AiReply AiLink::request(const std::string& json, int timeout_ms) {
+AiReply AiLink::request(const std::string& json, int timeout_ms,
+                        const std::function<bool()>& cancel) {
     AiReply reply;
     if (!impl_) {
         reply.error = "канал не инициализирован";
@@ -160,11 +180,17 @@ AiReply AiLink::request(const std::string& json, int timeout_ms) {
         close();
         return reply;
     }
+    impl_->cancelled = false;
     char len_buf[4];
-    if (!impl_->read_all(len_buf, 4, timeout_ms)) {
-        reply.error = "воркер не ответил вовремя";
+    if (!impl_->read_all(len_buf, 4, timeout_ms, cancel)) {
         reply.ms = double(mono_ms() - t0);
-        close();
+        if (impl_->cancelled) {
+            reply.cancelled = true;
+            reply.error = "остановлено пользователем";
+        } else {
+            reply.error = "воркер не ответил вовремя";
+        }
+        close();                                // ответ в пути не должен достаться следующему запросу
         return reply;
     }
     const uint32_t size = be32(len_buf);
@@ -174,9 +200,14 @@ AiReply AiLink::request(const std::string& json, int timeout_ms) {
         return reply;
     }
     reply.json.resize(size);
-    if (size && !impl_->read_all(reply.json.data(), size, timeout_ms)) {
-        reply.error = "ответ воркера оборвался";
+    if (size && !impl_->read_all(reply.json.data(), size, timeout_ms, cancel)) {
         reply.ms = double(mono_ms() - t0);
+        if (impl_->cancelled) {
+            reply.cancelled = true;
+            reply.error = "остановлено пользователем";
+        } else {
+            reply.error = "ответ воркера оборвался";
+        }
         close();
         return reply;
     }

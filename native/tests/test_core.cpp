@@ -1134,6 +1134,63 @@ static void test_debug_log() {
 }
 
 // ---------------------------------------------------------------------------
+//  «Стоп» во время ожидания ответа модели (а не только между шагами)
+// ---------------------------------------------------------------------------
+static void test_cancel_stops_model_wait() {
+    group("«Стоп» прерывает ожидание ответа модели");
+    const char* repo_env = std::getenv("AGENT_REPO_ROOT");
+    const std::string repo = repo_env ? repo_env : ".";
+    const std::string sock = "/tmp/agent_slowbrain.sock";
+    std::remove(sock.c_str());
+    const std::string cmd = "cd " + repo +
+                            " && AGENT_FAKE_MODE=slow_answer AGENT_FAKE_SOCKET=" + sock +
+                            " nohup python3 -m ai.fake_brain > /tmp/agent_slowbrain.log 2>&1 &";
+    std::system(cmd.c_str());
+    bool up = false;
+    for (int i = 0; i < 300 && !up; ++i) {
+        up = fs::exists(sock);
+        if (!up) std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    check(up, "медленный мозг поднял канал");
+    if (up) {
+        auto platform = std::make_unique<MockPlatform>();
+        RuntimeConfig cfg;
+        cfg.preload = false;
+        cfg.state_dir = "/tmp/agent_slowbrain_state";
+        cfg.ai_socket = sock;
+        cfg.llm_timeout_ms = 30000;          // модель «думает» долго
+        AgentRuntime rt(cfg, std::move(platform));
+        std::string error;
+        rt.start(error);
+        std::atomic<bool> cancelled{false};
+        rt.set_cancel([&cancelled]() { return cancelled.load(); });
+
+        std::thread stopper([&cancelled]() {
+            std::this_thread::sleep_for(std::chrono::milliseconds(400));
+            cancelled.store(true);
+        });
+        const int64_t t0 = now_ms();
+        const std::string result = rt.run_task("задача, на которую модель думает долго", 3);
+        const int64_t ms = now_ms() - t0;
+        stopper.join();
+        // Раньше «Стоп» ждал ответа модели до llm_timeout_ms: 30 секунд вместо мгновения.
+        check(ms < 3000, "«Стоп» прервал ожидание модели сразу (получено " +
+                             std::to_string(ms) + " мс)");
+        check(result.find("остановлено пользователем") != std::string::npos,
+              "причина названа честно: " + result);
+        check(result.find("\"ok\":true") == std::string::npos,
+              "прерванная задача не объявлена выполненной: " + result);
+
+        // Канал после отмены восстанавливается: следующая задача проходит нормально.
+        cancelled.store(false);
+        const std::string again = rt.run_task("ещё одна задача", 3);
+        check(again.find("\"ok\":true") != std::string::npos,
+              "после отмены канал снова работает: " + again);
+    }
+    std::system("pkill -f 'ai[.]fake_brain' >/dev/null 2>&1 || true");
+}
+
+// ---------------------------------------------------------------------------
 //  Полная сборка теста
 // ---------------------------------------------------------------------------
 int main(int argc, char** argv) {
@@ -1162,6 +1219,7 @@ int main(int argc, char** argv) {
         test_preview_paths();
         test_frame_crop();
         test_debug_log();
+        test_cancel_stops_model_wait();
         test_browser_path();
         test_cancel_stops_agent_loop();
         test_ipc();

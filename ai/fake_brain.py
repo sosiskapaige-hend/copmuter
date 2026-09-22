@@ -13,6 +13,7 @@
     bad_tool    — шаг 1: неизвестный инструмент, шаг 2: finished
     broken      — неразбираемый ответ (проверка честной ошибки)
     slow        — шаг 1: долгое ожидание (проверка «Стоп» на уровне исполнителя)
+    slow_answer — модель отвечает не сразу (проверка «Стоп» во время ожидания ответа)
     vision      — на запрос зрения отвечает кликом по AGENT_FAKE_CLICK (по умолчанию 640,360)
     vision_none — на запрос зрения честно отвечает «не вижу»
 """
@@ -124,6 +125,14 @@ def build_reply(request: dict) -> dict:
                                "note": "Ищу кнопку на экране"}], "finished": False}
         return {"id": request_id, "ok": True, "kind": "plan", "say": "Готово", "calls": [],
                 "finished": True}
+
+    if mode == "slow_answer":
+        # Медленный ответ модели: ядро должно прервать ожидание по «Стоп», а не
+        # висеть до llm_timeout_ms.
+        delay_ms = int(float(os.environ.get("AGENT_FAKE_DELAY_S", "5")) * 1000)
+        time.sleep(delay_ms / 1000.0)
+        return {"id": request_id, "ok": True, "kind": "plan", "say": "наконец-то ответил",
+                "calls": [], "finished": True}
 
     if mode == "slow":
         if step == 1:

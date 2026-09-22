@@ -9,6 +9,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -16,6 +17,7 @@ namespace agent {
 
 struct AiReply {
     bool ok = false;
+    bool cancelled = false;  // остановлено пользователем, а не таймаут и не обрыв
     std::string json;        // ответ воркера как есть
     std::string error;
     double ms = 0.0;
@@ -35,7 +37,11 @@ public:
     void close();
 
     // Запрос к модели/планировщику. Возвращает ответ или ошибку (таймаут/обрыв).
-    AiReply request(const std::string& json, int timeout_ms);
+    // cancel — опрос «Стоп» из UI: ожидание ответа модели прерывается за десятки
+    // миллисекунд, а не через llm_timeout_ms. Соединение после отмены закрывается:
+    // ответ, который уже в пути, не должен быть прочитан как ответ на другой запрос.
+    AiReply request(const std::string& json, int timeout_ms,
+                    const std::function<bool()>& cancel = {});
 
     // Сколько раз соединение поднималось заново (диагностика «мигающих» воркеров).
     int reconnects() const { return reconnects_; }

@@ -396,10 +396,12 @@ std::string AgentRuntime::vision_call(const std::string& mode, const std::string
         std::to_string(small.width) + ",\"height\":" + std::to_string(small.height) +
         ",\"origin_x\":" + std::to_string(before.origin_x) + ",\"origin_y\":" +
         std::to_string(before.origin_y) + ",\"scale\":" + std::to_string(scale) + "}}";
-    AiReply reply = ai_link_->request(request, cfg_.vision_timeout_ms);
-    if (!reply.ok && ai_link_->ensure_connected(error))
-        reply = ai_link_->request(request, cfg_.vision_timeout_ms);
+    const auto cancelled = [this] { return cancel_ && cancel_(); };
+    AiReply reply = ai_link_->request(request, cfg_.vision_timeout_ms, cancelled);
+    if (!reply.ok && !reply.cancelled && ai_link_->ensure_connected(error))
+        reply = ai_link_->request(request, cfg_.vision_timeout_ms, cancelled);
     c_.vision_calls.fetch_add(1);
+    if (reply.cancelled) return fail("остановлено пользователем", "\"cancelled\":true");
     if (!reply.ok) return fail("зрение не ответило: " + reply.error);
     if (!json_get_bool(reply.json, "ok", true)) {
         const std::string why = json_get_str(reply.json, "error");
@@ -460,9 +462,10 @@ std::string AgentRuntime::vision_call(const std::string& mode, const std::string
 // ---------------------------------------------------------------------------
 std::string AgentRuntime::browser_call(std::string_view args_json) {
     const double t0 = now_us();
-    auto fail = [&](const std::string& error) {
-        return std::string("{\"ok\":false,\"tool\":\"browser_task\",\"error\":\"") +
-               json_escape(error) + "\",\"ms\":" +
+    auto fail = [&](const std::string& error, const std::string& extra = {}) {
+        return std::string("{\"ok\":false,\"tool\":\"browser_task\",") +
+               (extra.empty() ? std::string() : (extra + ",")) +
+               "\"error\":\"" + json_escape(error) + "\",\"ms\":" +
                std::to_string(int((now_us() - t0) / 1000.0)) + "}";
     };
     const std::string action = json_get_str(args_json, "action", "open");
@@ -483,11 +486,13 @@ std::string AgentRuntime::browser_call(std::string_view args_json) {
     }
     request += "\"timeout_ms\":" +
                std::to_string(json_get_int(args_json, "timeout_ms", cfg_.browser_timeout_ms)) + "}";
-    AiReply reply = ai_link_->request(request, cfg_.browser_timeout_ms);
-    if (!reply.ok && ai_link_->ensure_connected(error))
-        reply = ai_link_->request(request, cfg_.browser_timeout_ms);
+    const auto cancelled = [this] { return cancel_ && cancel_(); };
+    AiReply reply = ai_link_->request(request, cfg_.browser_timeout_ms, cancelled);
+    if (!reply.ok && !reply.cancelled && ai_link_->ensure_connected(error))
+        reply = ai_link_->request(request, cfg_.browser_timeout_ms, cancelled);
     const bool payload_ok = json_get_bool(reply.json, "ok", true);
     note_tool_call("browser_task", reply.ok && payload_ok, (now_us() - t0) / 1000.0);
+    if (reply.cancelled) return fail("остановлено пользователем", "\"cancelled\":true");
     if (!reply.ok) return fail("браузерный путь не ответил: " + reply.error);
     if (!payload_ok) {
         // Мозг ответил по каналу, но само действие не удалось: причина — в его ответе.
