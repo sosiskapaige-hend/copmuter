@@ -72,6 +72,25 @@ class ChatConfig:
     attach_inline_chars: int = 6000   # сколько символов текстового файла вставлять в контекст
 
 
+@dataclass
+class FastConfig:
+    """Быстрый путь: простые команды без обращения к модели (ТЗ §5, §6)."""
+    enabled: bool = True              # простые команды выполняются детерминированно
+    preload: bool = True              # прогрев при старте (приложения, браузер, снимки)
+    default_browser: str = ""         # "" = системный браузер по умолчанию
+    language: str = "ru"
+    # Таймауты шагов (сек), после которых включается запасной способ (ТЗ §28).
+    launch_timeout: float = 12.0
+    file_timeout: float = 5.0
+    browser_timeout: float = 15.0
+    vision_timeout: float = 20.0
+    window_timeout: float = 8.0
+    process_timeout: float = 10.0
+    # Снимки экрана: предел площади (пикселей) — защита контекста локальной модели.
+    screenshot_max_pixels: int = 1474560
+    fast_share_target: float = 0.85   # целевая доля команд, идущих без модели
+
+
 VOICE_DEFAULTS: dict = {
     "stt_model": "small",          # tiny | base | small | medium | large-v3 (локальный Whisper)
     "language": "ru",
@@ -100,6 +119,7 @@ class Config:
     agent: AgentConfig = field(default_factory=AgentConfig)
     safety: SafetyConfig = field(default_factory=SafetyConfig)
     chat: ChatConfig = field(default_factory=ChatConfig)
+    fast: FastConfig = field(default_factory=FastConfig)
     voice: dict = field(default_factory=lambda: dict(VOICE_DEFAULTS))
     apps: dict = field(default_factory=dict)
     web_ui: dict = field(default_factory=lambda: {"host": "0.0.0.0", "port": 8710})
@@ -216,6 +236,24 @@ class Config:
             cfg.apps = _sec("apps")
         cfg.web_ui = {**cfg.web_ui, **_sec("web_ui")}
 
+        fast = _sec("fast")
+        for k in ("enabled", "preload"):
+            if k in fast:
+                setattr(cfg.fast, k, bool(fast[k]))
+        for k in ("launch_timeout", "file_timeout", "browser_timeout", "vision_timeout",
+                  "window_timeout", "process_timeout"):
+            if k in fast:
+                setattr(cfg.fast, k, float(fast[k]))
+        for k in ("screenshot_max_pixels",):
+            if k in fast:
+                setattr(cfg.fast, k, int(fast[k]))
+        for k in ("fast_share_target",):
+            if k in fast:
+                setattr(cfg.fast, k, float(fast[k]))
+        for k in ("default_browser", "language"):
+            if k in fast:
+                setattr(cfg.fast, k, str(fast[k]))
+
         chat = _sec("chat")
         for k in ("history_messages", "max_message_chars", "attach_inline_chars"):
             if k in chat:
@@ -259,4 +297,15 @@ class Config:
                 "api_key": "***" if self.llm.api_key else "",
             },
             "safety_mode": self.safety.mode,
+            "fast": {
+                "enabled": self.fast.enabled,
+                "preload": self.fast.preload,
+                "default_browser": self.fast.default_browser,
+                "language": self.fast.language,
+                "launch_timeout": self.fast.launch_timeout,
+                "file_timeout": self.fast.file_timeout,
+                "browser_timeout": self.fast.browser_timeout,
+                "vision_timeout": self.fast.vision_timeout,
+                "screenshot_max_pixels": self.fast.screenshot_max_pixels,
+            },
         }

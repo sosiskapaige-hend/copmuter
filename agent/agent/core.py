@@ -62,7 +62,7 @@ class Agent:
                  bus: EventBus, gateway: InteractionGateway, journal: Journal,
                  sessions: SessionStore, memory: LongTermMemory,
                  policy: SafetyPolicy, platform: PlatformInfo,
-                 workdir: str = ".") -> None:
+                 workdir: str = ".", services: dict | None = None) -> None:
         self.cfg = cfg
         self.llm = llm
         self.registry = registry
@@ -77,12 +77,112 @@ class Agent:
         self.planner = Planner(llm)
         self.running_tasks: dict[str, Control] = {}
         self._task_tasks: dict[str, asyncio.Task | None] = {}  # task_id -> asyncio.Task
+        # Подсистемы нового слоя (реестр приложений, состояние ПК, ожидания, ввод,
+        # зрение, быстрый путь, метрики). Инструменты берут их через ctx.service(...).
+        self.services: dict = dict(services or {})
         self._ctx = ToolContext(cfg=cfg, bus=bus, gateway=gateway, journal=journal,
-                                memory=memory, platform=platform, llm=llm, workdir=workdir)
+                                memory=memory, platform=platform, llm=llm, workdir=workdir,
+                                services=self.services)
 
-    # ------------------------- основной цикл -------------------------
+    # ------------------------- точка входа -------------------------
     async def run_task(self, goal: str, mode: str = "", task_id: str | None = None,
                        resume: bool = False) -> TaskState:
+        """Сначала быстрый путь (ТЗ §5), затем — агентный цикл с моделью."""
+        fast = self.services.get("fast")
+        metrics = self.services.get("metrics")
+        log = self.services.get("log")
+        tid = task_id or __import__("uuid").uuid4().hex[:10]
+        t_start = time.perf_counter()
+        if fast is not None and not resume and getattr(getattr(self.cfg, "fast", None),
+                                                       "enabled", True):
+            control = Control()
+            self.running_tasks[tid] = control
+            self._task_tasks[tid] = asyncio.current_task()
+            try:
+                res = await fast.run(goal, self._ctx, control=control, mode=mode)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:                      # noqa: BLE001
+                res = None
+                if log is not None:
+                    log.error("Быстрый путь не сработал — задача уходит модели",
+                              error=f"{type(exc).__name__}: {exc}"[:200])
+            finally:
+                self.running_tasks.pop(tid, None)
+                self._task_tasks.pop(tid, None)
+            if res is not None:
+                return self._finish_fast(goal, res, mode, tid, metrics, log, t_start)
+        t_agent = time.perf_counter()
+        st = await self._run_task_loop(goal, mode=mode, task_id=task_id, resume=resume)
+        if metrics is not None:
+            try:
+                metrics.task_start("agent", goal, t0=t_agent)
+                metrics.task_note(route="agent", steps=len(st.steps),
+                                  llm_calls=int(st.extra.get("llm_calls") or 0),
+                                  tool_calls=int(st.extra.get("tool_calls") or 0),
+                                  llm_ms=float(st.extra.get("llm_ms") or 0.0))
+                metrics.task_end(ok=st.status == "done", note=(st.summary or "")[:200])
+            except Exception:                             # noqa: BLE001
+                pass
+        return st
+
+    def _finish_fast(self, goal: str, res: Any, mode: str, task_id: str,
+                     metrics: Any, log: Any, t_start: float = 0.0) -> TaskState:
+        """Оформить результат быстрого пути как обычную задачу (история, UI, метрики)."""
+        from ..safety.policy import validate_mode
+        mode = validate_mode(mode or self.cfg.safety.mode)
+        st = TaskState(task_id=task_id, goal=goal, mode=mode,
+                       status="done" if res.ok else "failed")
+        st.progress = 100 if res.ok else 0
+        st.summary = (res.text or "").strip() or ("Готово." if res.ok else "Не выполнено.")
+        st.last_error = (res.error or "")[:400]
+        st.extra = {"route": res.route, "intent": res.intent_name, "fast": True,
+                    "ms": round(res.ms, 1)}
+        st.steps.append(StepRecord(index=1, plan_title=st.summary[:80],
+                                   tool=res.intent_name or "fast",
+                                   args={"route": res.route}, ok=bool(res.ok),
+                                   output=(res.text or "")[:800],
+                                   error=(res.error or "")[:400]))
+        st.iteration = 1
+        self.sessions.save(st)
+        if log is not None:
+            log.event("fast_done", intent=res.intent_name, ms=round(res.ms, 1),
+                      ok=bool(res.ok), route=res.route)
+        # --- история для чата: план + вызов + наблюдение ---
+        self.bus.emit("plan", task_id=task_id, summary="Быстрый путь (без модели)",
+                      steps=[{"title": res.intent_name or "действие", "detail": ""}],
+                      fast=True)
+        self.bus.emit("tool_call", task_id=task_id, tool=res.intent_name or "fast",
+                      args={"route": res.route}, fast=True)
+        self.bus.emit("observation", task_id=task_id, tool=res.intent_name or "fast",
+                      ok=bool(res.ok), output=(res.text or res.error or "")[:1500],
+                      fast=True, ms=round(res.ms, 1))
+        if metrics is not None:
+            try:
+                metrics.route_stat(res.route or "fast", res.ms, bool(res.ok))
+                metrics.task_start(res.route or "fast", goal, t0=t_start or None)
+                metrics.task_note(steps=1, tool_calls=len(res.actions) or 1,
+                                  llm_calls=1 if res.route == "llm_text" else 0)
+                metrics.task_end(ok=bool(res.ok), note=st.summary)
+            except Exception:                             # noqa: BLE001
+                pass
+        if res.ok:
+            self.bus.emit("task_done", task_id=task_id, ok=True, summary=st.summary,
+                          fast=True)
+        else:
+            self.bus.emit("task_failed", task_id=task_id, error=st.last_error or st.summary,
+                          fast=True)
+        try:
+            note_task = getattr(self.memory, "note_task", None)
+            if callable(note_task):
+                note_task(goal, st.summary, ok=bool(res.ok))
+        except Exception:
+            pass
+        return st
+
+    # ------------------------- основной цикл -------------------------
+    async def _run_task_loop(self, goal: str, mode: str = "", task_id: str | None = None,
+                             resume: bool = False) -> TaskState:
         from ..safety.policy import validate_mode
         mode = validate_mode(mode or self.cfg.safety.mode)
         st = self.sessions.load(task_id) if (task_id and resume) else None
@@ -143,8 +243,18 @@ class Agent:
                     return st
 
                 st.iteration += 1
+                llm_t0 = time.perf_counter()
                 decision = await self.llm.next_action(st.goal, self._context(st),
                                                       history, self._tool_schemas(st, pinned))
+                llm_ms = (time.perf_counter() - llm_t0) * 1000.0
+                st.extra["llm_calls"] = int(st.extra.get("llm_calls") or 0) + 1
+                st.extra["llm_ms"] = float(st.extra.get("llm_ms") or 0.0) + llm_ms
+                _metrics = self.services.get("metrics")
+                if _metrics is not None:
+                    try:
+                        _metrics.llm_call(llm_ms, True, kind="next_action")
+                    except Exception:                     # noqa: BLE001
+                        pass
                 if decision.thought:
                     self.bus.emit("thought", task_id=st.task_id,
                                   text=decision.thought[:400])
@@ -286,6 +396,13 @@ class Agent:
                               elapsed=round(dt, 2),
                               data={k: v for k, v in result.data.items() if k != "undo"})
 
+                st.extra["tool_calls"] = int(st.extra.get("tool_calls") or 0) + 1
+                _metrics = self.services.get("metrics")
+                if _metrics is not None:
+                    try:
+                        _metrics.tool_call(tc.name, dt * 1000.0, ok)
+                    except Exception:                     # noqa: BLE001
+                        pass
                 undo = result.data.get("undo")
                 self.journal.record(st.task_id, tc.name, tc.args, ok, undo=undo)
                 st.steps.append(StepRecord(len(st.steps),

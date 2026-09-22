@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Оболочка Copmuter: окна, чат, статусы, настройки, поток событий.
+    Низкоуровневой работой (Win32, SendInput, реестр, файлы, скриншоты) занимается
+    нативное ядро AgentRuntime.dll — C# только показывает и управляет.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>Copmuter.Agent</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <AssemblyName>Copmuter</AssemblyName>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.5.240802000" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.22621.3233" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Нативное ядро и его зависимости кладём рядом с exe. -->
+    <None Include="..\..\native\build\AgentRuntime.dll" Condition="Exists('..\..\native\build\AgentRuntime.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>AgentRuntime.dll</Link>
+    </None>
+  </ItemGroup>
+
+</Project>

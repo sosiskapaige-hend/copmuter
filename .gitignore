@@ -5,3 +5,20 @@ __pycache__/
 .pytest_cache/
 .agent-home/
 node_modules/
+bin/
+obj/
+*.o
+*.so
+*.dll
+*.exe
+*.pdb
+.vs/
+
+# Рабочие каталоги запусков (state_dir) и локальные снимки
+native/abismoke/
+native/hostsmoke/
+native/notes.txt
+*.state/
+# каталоги состояния, которые создают прогоны хозяина/тестов рядом с ядром
+native/agent_debug.log
+native/*smoke/

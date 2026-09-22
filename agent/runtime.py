@@ -15,20 +15,31 @@ from pathlib import Path
 from typing import Any
 
 from .agent.core import Agent
+from .apps.discovery import AppDiscovery
+from .apps.launcher import AppLauncher, OSLaunchEnv
+from .apps.registry import AppRegistry
 from .chats import ChatService
 from .config import Config
 from .events import EventBus, InteractionGateway
+from .fast.layer import FastLayer
+from .fast.optimizer import ExecutionOptimizer
+from .input import InputController
 from .llm import create_llm
 from .memory.longterm import LongTermMemory
 from .memory.session import SessionStore
+from .performance import CacheHub, Metrics, RunLog
 from .platform import get_platform
 from .safety.journal import Journal
 from .safety.policy import SafetyPolicy
+from .system.state import ComputerState
+from .system.wait import WaitManager
 from .tasks.background import BackgroundRunner
 from .tasks.queue import TaskManager
 from .tasks.scheduler import Scheduler
 from .tasks.triggers import TriggerManager
 from .tools import build_registry
+from .vision.elements import VisionProcessor
+from .vision.screenshot import ScreenshotManager
 
 
 class AgentRuntime:
@@ -53,9 +64,40 @@ class AgentRuntime:
         self.memory = LongTermMemory(cfg.memory_dir)
         self.policy = SafetyPolicy(confirm_from=cfg.safety.confirm_from,
                                    bulk_delete_threshold=cfg.safety.bulk_delete_threshold)
+
+        # ---------- новый слой: лог/метрики/кэш ----------
+        self.log = RunLog(cfg.logs_dir / "trace.jsonl", level=cfg.agent.log_level)
+        self.metrics = Metrics(cfg.state_dir / "metrics.json")
+        self.cache = CacheHub(cfg.state_dir)
+
+        # ---------- подсистемы ПК ----------
+        self.state = ComputerState(self.platform, cfg=cfg, cache=self.cache, workdir=workdir)
+        self.wait = WaitManager(state=self.state, platform=self.platform)
+        self.inputs = InputController(platform=self.platform, cfg=cfg, bus=self.bus,
+                                      log=self.log, metrics=self.metrics)
+        self.screens = ScreenshotManager(cfg=cfg, state=self.state, cache=self.cache,
+                                         log=self.log, metrics=self.metrics)
+        self.vision = VisionProcessor(self.llm, self.screens, state=self.state,
+                                      log=self.log, metrics=self.metrics)
+        self.apps = AppRegistry(cfg.state_dir / "apps.json")
+        self.discovery = AppDiscovery(cache=self.cache, log=self.log)
+        self.optimizer = ExecutionOptimizer(metrics=self.metrics, log=self.log, cfg=cfg)
+        self.launcher = AppLauncher(self.apps, env=OSLaunchEnv(), metrics=self.metrics,
+                                    log=self.log, optimizer=self.optimizer, wait=self.wait,
+                                    state=self.state, inputs=self.inputs, cfg=cfg)
+
+        # ---------- быстрый путь: намерение → инструменты, без модели ----------
+        self.fast = FastLayer(cfg=cfg, registry=self.registry, llm=self.llm, bus=self.bus,
+                              metrics=self.metrics, log=self.log, cache=self.cache,
+                              apps=self.apps, launcher=self.launcher, state=self.state,
+                              wait=self.wait, inputs=self.inputs, screens=self.screens,
+                              vision=self.vision, optimizer=self.optimizer,
+                              policy=self.policy, gateway=self.gateway,
+                              platform=self.platform, workdir=workdir)
+
         self.agent = Agent(cfg, self.llm, self.registry, self.bus, self.gateway,
                            self.journal, self.sessions, self.memory, self.policy,
-                           self.platform, workdir=workdir)
+                           self.platform, workdir=workdir, services=self.fast.services())
         self.tasks = TaskManager(self.agent, self.bus, self.sessions)
         self.chats = ChatService(self)
         self.schedules = Scheduler(cfg.state_dir, self._schedule_fire)
@@ -90,6 +132,29 @@ class AgentRuntime:
                       message=f"Агент запущен (LLM: {self.llm.name}, "
                               f"инструментов: {len(self.registry.names())}, "
                               f"платформа: {self.platform.system})")
+        if getattr(self.cfg.fast, "preload", True):
+            asyncio.create_task(self._preload())
+
+    # ---------------- прогрев (ТЗ §43) ----------------
+    async def _preload(self) -> None:
+        """Заранее подтянуть то, что понадобится в первых командах."""
+        t0 = time.perf_counter()
+        parts: list[str] = []
+        try:
+            summary = await asyncio.to_thread(self.discovery.run, self.apps, True, True)
+            parts.append(f"приложений: {summary.get('found', len(self.apps.installed()))}")
+        except Exception as e:  # noqa: BLE001
+            parts.append(f"поиск приложений: {type(e).__name__}")
+        try:
+            # прогрев снимка экрана (в headless просто фиксируем бэкенд)
+            shot = await self.screens.capture(tag="preload")
+            parts.append(f"экран: {shot.meta.get('backend', 'ok')}")
+        except Exception as e:  # noqa: BLE001
+            parts.append(f"снимок: {type(e).__name__}")
+        ms = (time.perf_counter() - t0) * 1000
+        self.log.event("preload", ms=round(ms, 1), ok=True, detail=", ".join(parts))
+        self.bus.emit("log", level="preload",
+                      message=f"Прогрев выполнен за {ms:.0f} мс ({', '.join(parts)})")
 
     def _wait_loop(self, timeout: float = 10.0) -> None:
         t0 = time.time()
@@ -230,7 +295,22 @@ class AgentRuntime:
             "pending": self.gateway.pending_list(),
             "background": self.bg.all()[-20:],
             "voice": self.voice_support(),
+            "fast": self.fast_stats(),
         }
+
+    def fast_stats(self) -> dict:
+        """Статистика быстрого пути и метрик (для UI/отладки)."""
+        out: dict = {"apps_known": len(self.apps.installed())}
+        try:
+            out["router"] = self.fast.router.summary()
+            out["learned"] = self.fast.memory.size()
+            out["metrics"] = self.metrics.summary(top=6)
+            out["cache"] = self.cache.stats()
+            out["trace_lines"] = self.log.written
+            out["last_events"] = self.log.tail(5)
+        except Exception as e:  # noqa: BLE001
+            out["error"] = str(e)[:200]
+        return out
 
     def system_stats(self) -> dict:
         from .tools.system import _psutil, _mem_info, _cpu_info

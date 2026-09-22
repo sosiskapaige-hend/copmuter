@@ -1,0 +1,22 @@
+"""Пример плагина. Включить: убрать суффикс .disabled из имени файла."""
+from agent.tools.base import Risk, Tool, ToolContext, ToolResult
+
+
+class WeatherTool(Tool):
+    name = "weather"
+    description = "Погода в городе (пример плагина)"
+    risk = Risk.NONE
+    category = "misc"
+    parameters = {"type": "object",
+                  "properties": {"city": {"type": "string", "description": "Город"}},
+                  "required": ["city"]}
+
+    async def execute(self, ctx: ToolContext, city: str) -> ToolResult:
+        state = ctx.service("state")
+        where = "локально"
+        if state is not None:
+            where = "с учётом состояния ПК"
+        return ToolResult.ok_result(f"{city}: солнечно ({where})", method="plugin")
+
+
+TOOLS = [WeatherTool()]

@@ -1,20 +1,31 @@
 @echo off
 chcp 65001 >nul
-title AI Computer Agent
+title Copmuter — локальный агент
 cd /d %~dp0
 
-rem Запуск приложения БЕЗ сборки в EXE (нужен только Python 3.10+)
-where python >nul 2>nul
-if errorlevel 1 (
-    echo [ОШИБКА] Python не найден. Установите Python 3.10+ с python.org,
-    echo отметив "Add Python to PATH".
-    pause
-    exit /b 1
+rem Запуск: ядро + Python-мозг + окно WinUI 3.
+rem Модель должна быть поднята в LM Studio (Qwen3-VL-8B-Instruct, сервер на :1234).
+
+set STATE=%LOCALAPPDATA%\Copmuter
+
+if not exist "native\build\AgentRuntime.dll" (
+    echo [1/3] Собираю ядро...
+    call native\build_windows.bat || (echo Ядро не собралось & pause & exit /b 1)
 )
 
-rem в первый раз докачает небольшие зависимости окна
-python -c "import webview" >nul 2>nul
-if errorlevel 1 python -m pip install --quiet pywebview mss psutil
+if not exist "shell\Copmuter.Agent\bin\Release\net8.0-windows10.0.19041.0\Copmuter.exe" (
+    echo [2/3] Собираю оболочку...
+    dotnet build shell\Copmuter.Agent\Copmuter.Agent.csproj -c Release || (echo Оболочка не собралась & pause & exit /b 1)
+)
 
-python desktop.py
-pause
+echo [3/3] Проверяю мозг и модель...
+python -m ai.main --preflight --state-dir "%STATE%"
+if errorlevel 1 (
+    echo.
+    echo [!] Модель не готова. Запустите LM Studio, загрузите Qwen3-VL-8B-Instruct
+    echo     и включите сервер на http://127.0.0.1:1234 — затем запустите start.bat снова.
+    echo     Простые команды при этом работают и без модели.
+    echo.
+)
+
+start "" "shell\Copmuter.Agent\bin\Release\net8.0-windows10.0.19041.0\Copmuter.exe"
