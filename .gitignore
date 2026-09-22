@@ -19,3 +19,6 @@ native/abismoke/
 native/hostsmoke/
 native/notes.txt
 *.state/
+# каталоги состояния, которые создают прогоны хозяина/тестов рядом с ядром
+native/agent_debug.log
+native/*smoke/
