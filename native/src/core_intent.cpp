@@ -152,7 +152,11 @@ bool same_phrase_stemmed(std::string_view a, std::string_view b) {
 bool starts_with_word(std::string_view text, std::string_view word) {
     if (text.size() < word.size()) return false;
     if (text.compare(0, word.size(), word) != 0) return false;
-    return text.size() == word.size() || text[word.size()] == ' ';
+    if (text.size() == word.size()) return true;
+    if (text[word.size()] == ' ') return true;
+    // Префикс с завершающим пробелом («на картинку », «в папке ») уже содержит границу:
+    // следом может идти что угодно, включая путь «/tmp/wall.png».
+    return !word.empty() && word.back() == ' ';
 }
 
 std::string_view stem(std::string_view w) {

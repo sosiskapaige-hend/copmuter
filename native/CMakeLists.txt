@@ -35,6 +35,7 @@ set(AGENT_CORE_SOURCES
     src/core_util.cpp
     src/core_wait.cpp
     src/core_tool_call.cpp
+    src/core_png.cpp
     src/core_agent_loop.cpp
 )
 
@@ -70,6 +71,9 @@ else()
 endif()
 
 # --- тесты ядра
+add_executable(agent_scenarios tests/test_scenarios.cpp ${CORE_SOURCES})
+target_include_directories(agent_scenarios PRIVATE include tests)
+
 add_executable(agent_tests tests/test_core.cpp)
 target_link_libraries(agent_tests PRIVATE agent_runtime)
 if(UNIX)

@@ -98,7 +98,9 @@ void AgentRuntime::set_event_sink(EventFn fn) {
 }
 
 void AgentRuntime::set_cancel(std::function<bool()> fn) {
-    cancel_ = std::move(fn);
+    // ВАЖНО: копия, а не перемещение — иначе WaitManager получил бы уже пустую
+    // функцию и «Стоп» не прерывал бы ожидания.
+    cancel_ = fn;
     if (wait_) wait_->set_cancel(fn);
 }
 
@@ -143,6 +145,12 @@ void AgentRuntime::register_builtin_tools() {
         "apps", Risk::Low, Method::CachedExe, cfg_.launch_timeout_ms, VerifyKind::ProcessStarted,
         {"launch_app"}, {Method::Shell, Method::Cli, Method::Uia},
         false, "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}},\"required\":[\"name\"]}");
+    add("browser_task", "Сложная страница: клик/ввод/данные/скачивание через Playwright (Chromium)",
+        "browser", Risk::Medium, Method::Uia, cfg_.browser_timeout_ms, VerifyKind::None,
+        {"browser_task"}, {Method::Cli}, false,
+        "{\"type\":\"object\",\"properties\":{\"action\":{\"type\":\"string\"},"
+        "\"url\":{\"type\":\"string\"},\"selector\":{\"type\":\"string\"}},"
+        "\"required\":[\"action\"]}");
     add("focus_window", "Переключиться на окно приложения (по заголовку/процессу; при отсутствии — запуск)",
         "windows", Risk::Low, Method::WinApi, cfg_.window_timeout_ms, VerifyKind::WindowActive,
         {"focus_window"}, {Method::Shell, Method::Uia});

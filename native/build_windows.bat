@@ -25,7 +25,7 @@ pushd build
 
 set CORE=..\src\core_intent.cpp ..\src\core_intent_parse.cpp ..\src\core_registry.cpp ^
  ..\src\core_optimizer.cpp ..\src\core_batch.cpp ..\src\core_router.cpp ..\src\core_runtime.cpp ^
- ..\src\core_execute.cpp ..\src\core_util.cpp ..\src\core_wait.cpp ..\src\core_tool_call.cpp ^
+ ..\src\core_execute.cpp ..\src\core_util.cpp ..\src\core_wait.cpp ..\src\core_tool_call.cpp ..\src\core_png.cpp ^
  ..\src\core_agent_loop.cpp ..\src\platform_win32.cpp ..\src\ipc_win32.cpp ..\src\abi.cpp
 
 set FLAGS=/nologo /std:c++20 /EHsc /W3 /MP /I..\include /DWIN32_LEAN_AND_MEAN /DNOMINMAX
@@ -41,13 +41,17 @@ echo == agent_host.exe (отладочный запуск ядра без UI)
 cl %FLAGS% ..\src\host_main.cpp %CORE% /Fe:agent_host.exe /Fo:host_ /link %LIBS%
 if errorlevel 1 (popd & popd & exit /b 1)
 
+echo == agent_scenarios.exe (обязательные сценарии ТЗ)
+cl %FLAGS% /I..\tests ..\tests\test_scenarios.cpp %CORE% /Fe:agent_scenarios.exe /Fo:scen_ /link %LIBS%
+if errorlevel 1 (popd & popd & exit /b 1)
+
 echo == agent_tests.exe (тесты ядра на моках)
 cl %FLAGS% ..\tests\test_core.cpp %CORE% /Fe:agent_tests.exe /Fo:test_ /link %LIBS%
 if errorlevel 1 (popd & popd & exit /b 1)
 
 popd
 echo.
-echo Готово: %ROOT%build\AgentRuntime.dll, agent_host.exe, agent_tests.exe
+echo Готово: %ROOT%build\AgentRuntime.dll, agent_host.exe, agent_tests.exe, agent_scenarios.exe
 echo Проверка:  build\agent_host.exe "открой телегу"
 echo Тесты:     build\agent_tests.exe
 popd

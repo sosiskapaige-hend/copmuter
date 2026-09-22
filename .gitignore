@@ -13,3 +13,9 @@ obj/
 *.exe
 *.pdb
 .vs/
+
+# Рабочие каталоги запусков (state_dir) и локальные снимки
+native/abismoke/
+native/hostsmoke/
+native/notes.txt
+*.state/

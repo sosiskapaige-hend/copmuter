@@ -132,6 +132,8 @@ public:
     IPlatform& platform() { return *platform_; }
     ActionQueue& queue() { return queue_; }
     const RuntimeConfig& config() const { return cfg_; }
+    // Изменяемая конфигурация: режим безопасности, бюджеты, канал — меняются из UI.
+    RuntimeConfig& config() { return cfg_; }
 
     void set_event_sink(EventFn fn);             // UI/IPC
     void emit(Event ev);
@@ -169,6 +171,11 @@ private:
     // --- служебное ---
     bool execute_intent(const Intent& it, FastOutcome& out);
     std::string run_tool_impl(std::string_view tool, std::string_view args_json);
+    // Глаза: снимок → Python/Qwen3-VL → координаты → клик ядра → проверка изменения экрана.
+    std::string vision_call(const std::string& mode, const std::string& target,
+                            std::string_view args_json);
+    // Сложные страницы: Playwright в Python-воркере (прямые ссылки — нативный open_url).
+    std::string browser_call(std::string_view args_json);
     // Разбор ответа мозга: {"calls":[{"tool","args","note"}],"say","finished"}.
     static bool parse_plan(std::string_view json, std::vector<std::string>& calls, std::string& say,
                            bool& finished);

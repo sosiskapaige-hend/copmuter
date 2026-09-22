@@ -1,218 +1,13 @@
 // Тесты ядра AgentRuntime: разбор фраз, маршрутизация, реестр приложений,
-// оптимизатор, пакеты действий, ожидания, полный цикл простой команды.
+// оптимизатор, пакеты действий, ожидания, полный цикл простой команды,
+// агентный цикл, зрение, безопасность, ABI и IPC.
 //
-// Сборка (без CMake, чистый g++):
-//   g++ -std=c++20 -O2 -Iinclude tests/test_core.cpp src/*.cpp -o build/agent_tests
+// Сборка (без CMake, чистый g++): native/build_linux.sh
 // Запуск:
 //   ./build/agent_tests            — все тесты
 //   ./build/agent_tests --bench    — только микро-бенчмарк маршрутизатора
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <chrono>
-#include <filesystem>
-#include <map>
-#include <string>
-#include <thread>
-#include <vector>
+#include "test_support.h"
 
-#include "agent/intent.h"
-#include "agent/ipc.h"
-#include "agent/platform.h"
-#include "agent/runtime.h"
-#include "agent/util.h"
-
-namespace fs = std::filesystem;
-using namespace agent;
-
-// ---------------------------------------------------------------------------
-//  Мини-фреймворк: без внешних зависимостей, чтобы собиралось одним g++.
-// ---------------------------------------------------------------------------
-static int g_failed = 0;
-static int g_passed = 0;
-static const char* g_group = "";
-
-static void group(const char* name) {
-    g_group = name;
-    std::printf("\n== %s\n", name);
-}
-
-static void check(bool cond, const std::string& what) {
-    if (cond) {
-        ++g_passed;
-        std::printf("  ok   %s\n", what.c_str());
-    } else {
-        ++g_failed;
-        std::printf("  FAIL %s\n", what.c_str());
-    }
-}
-
-static void check_eq(const std::string& got, const std::string& want, const std::string& what) {
-    check(got == want, what + " (got «" + got + "», want «" + want + "»)");
-}
-
-// ---------------------------------------------------------------------------
-//  Мок-платформа: используется там, где нельзя трогать реальную систему.
-// ---------------------------------------------------------------------------
-class MockPlatform : public IPlatform {
-public:
-    std::vector<ProcessInfo> procs;
-    std::vector<WindowInfo> wins;
-    std::vector<MonitorInfo> mons;
-    std::map<std::string, std::string> files;
-    std::string clip;
-    std::vector<std::string> spawned;
-    std::vector<std::string> commands;
-    ExecResult command_result;
-    bool fail_spawn = false;
-
-    const char* name() const override { return "mock"; }
-    bool has_display() const override { return true; }
-
-    std::vector<ProcessInfo> processes() const override { return procs; }
-    bool process_running(std::string_view n) const override {
-        for (const ProcessInfo& p : procs)
-            if (p.name == n) return true;
-        return false;
-    }
-    bool kill_process(std::string_view n, bool) override {
-        for (size_t i = 0; i < procs.size(); ++i)
-            if (procs[i].name == n) {
-                procs.erase(procs.begin() + long(i));
-                return true;
-            }
-        return false;
-    }
-    LaunchResult spawn_detached(const std::string& command, std::string_view args) override {
-        LaunchResult r;
-        if (fail_spawn) {
-            r.error = "spawn отключён в тесте";
-            return r;
-        }
-        spawned.push_back(command + (args.empty() ? "" : " " + std::string(args)));
-        r.ok = true;
-        r.method = "mock";
-        r.ms = 0.1;
-        return r;
-    }
-    std::vector<WindowInfo> windows() const override { return wins; }
-    std::optional<WindowInfo> find_window(std::string_view title) const override {
-        for (const WindowInfo& w : wins)
-            if (w.title.find(title) != std::string::npos) return w;
-        return std::nullopt;
-    }
-    std::optional<WindowInfo> active_window() const override {
-        return wins.empty() ? std::nullopt : std::optional<WindowInfo>(wins.front());
-    }
-    bool activate_window(uint64_t) override { return true; }
-    bool close_window(uint64_t) override { return true; }
-    bool mouse_move(int, int) override { return true; }
-    bool mouse_click(int, int, int, int) override { return true; }
-    bool key_press(std::string_view) override { return true; }
-    bool hotkey(std::string_view) override { return true; }
-    bool type_text(std::string_view) override { return true; }
-    std::string clipboard_get() override { return clip; }
-    bool clipboard_set(std::string_view text) override {
-        clip = std::string(text);
-        return true;
-    }
-    bool file_exists(std::string_view p) const override { return files.count(std::string(p)) > 0; }
-    bool is_dir(std::string_view p) const override {
-        auto it = files.find(std::string(p));
-        return it != files.end() && it->second == "<dir>";
-    }
-    bool mkdir(std::string_view p, bool) override {
-        files[std::string(p)] = "<dir>";
-        return true;
-    }
-    bool write_file(std::string_view p, std::string_view c, bool) override {
-        files[std::string(p)] = std::string(c);
-        return true;
-    }
-    std::string read_file(std::string_view p, size_t) override { return files[std::string(p)]; }
-    bool remove_path(std::string_view p, bool, bool) override { return files.erase(std::string(p)) > 0; }
-    bool move_path(std::string_view s, std::string_view d) override {
-        auto it = files.find(std::string(s));
-        if (it == files.end()) return false;
-        files[std::string(d)] = it->second;
-        files.erase(it);
-        return true;
-    }
-    bool copy_path(std::string_view s, std::string_view d) override {
-        auto it = files.find(std::string(s));
-        if (it == files.end()) return false;
-        files[std::string(d)] = it->second;
-        return true;
-    }
-    std::vector<FileEntry> list_dir(std::string_view) override { return {}; }
-    std::vector<FileEntry> search_files(std::string_view, std::string_view, size_t) override {
-        return {};
-    }
-    ExecResult run_command(std::string_view cmd, std::string_view, int) override {
-        commands.push_back(std::string(cmd));
-        return command_result;
-    }
-    ExecResult run_powershell(std::string_view cmd, std::string_view, int) override {
-        commands.push_back("ps:" + std::string(cmd));
-        return command_result;
-    }
-    bool open_uri(std::string_view uri) override {
-        spawned.push_back("uri:" + std::string(uri));
-        return !fail_spawn;
-    }
-    bool open_path(std::string_view path) override {
-        spawned.push_back("path:" + std::string(path));
-        return !fail_spawn;
-    }
-    int discover_apps(AppRegistry& reg) override {
-        AppInfo a;
-        a.key = "mockapp";
-        a.display_name = "MockApp";
-        a.installed = true;
-        a.path = "mockapp.exe";
-        reg.add(a);
-        return 1;
-    }
-    std::string resolve_command(std::string_view c) const override { return std::string(c); }
-    std::string default_browser() const override { return "chrome"; }
-    std::vector<MonitorInfo> monitors() const override {
-        if (!mons.empty()) return mons;
-        MonitorInfo m;
-        m.width = 1920;
-        m.height = 1080;
-        return {m};
-    }
-    Frame capture(int, const int* region) override {
-        Frame f;
-        f.width = region ? region[2] : 1920;
-        f.height = region ? region[3] : 1080;
-        f.stride = f.width * 4;
-        f.pixels.assign(size_t(f.width) * size_t(f.height) * 4, 7);
-        f.headless = true;
-        f.backend = "mock";
-        return f;
-    }
-    bool set_wallpaper(std::string_view p) override {
-        spawned.push_back("wall:" + std::string(p));
-        return !fail_spawn;
-    }
-    bool open_settings(std::string_view p) override {
-        spawned.push_back("settings:" + std::string(p));
-        return !fail_spawn;
-    }
-    bool set_volume(int) override { return true; }
-    int get_volume() const override { return 40; }
-    std::string cwd() const override { return "/mock"; }
-    std::string env(std::string_view n) const override {
-        if (n == "USERPROFILE") return "C:\\Users\\tester";
-        if (n == "HOME") return "/home/tester";
-        if (n == "USERNAME") return "tester";
-        if (n == "TEMP") return "/tmp";
-        return {};
-    }
-};
-
-// Прогретый рантайм на мок-платформе: разбор фраз, реестр приложений, места.
 static std::unique_ptr<AgentRuntime> make_runtime(RuntimeConfig* used = nullptr) {
     auto platform = std::make_unique<MockPlatform>();
     RuntimeConfig cfg;
@@ -862,6 +657,222 @@ static void test_agent_loop_failed_tool() {
 }
 
 // ---------------------------------------------------------------------------
+//  Зрение: снимок → мозг → координаты → клик ядра → проверка изменения экрана
+// ---------------------------------------------------------------------------
+static void test_vision_roundtrip() {
+    group("зрение: снимок → мозг → клик → проверка");
+    const char* repo_env = std::getenv("AGENT_REPO_ROOT");
+    const std::string repo = repo_env ? repo_env : ".";
+    const std::string sock = "/tmp/agent_vision.sock";
+    std::remove(sock.c_str());
+    std::system("pkill -f 'ai[.]fake_brain' >/dev/null 2>&1 || true");
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    const std::string cmd = "cd " + repo +
+                            " && AGENT_FAKE_MODE=vision AGENT_FAKE_CLICK=640,360"
+                            " AGENT_FAKE_SOCKET=" + sock +
+                            " nohup python3 -m ai.fake_brain > /tmp/agent_vision.log 2>&1 &";
+    std::system(cmd.c_str());
+    bool up = false;
+    for (int i = 0; i < 300 && !up; ++i) {
+        up = fs::exists(sock);
+        if (!up) std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    check(up, "канал к зрению поднят");
+    if (!up) return;
+
+    auto platform = std::make_unique<MockPlatform>();
+    MockPlatform* plat = platform.get();
+    RuntimeConfig cfg;
+    cfg.preload = false;
+    cfg.state_dir = "/tmp/agent_vision_state";
+    cfg.ai_socket = sock;
+    AgentRuntime rt(cfg, std::move(platform));
+    std::string error;
+    rt.start(error);
+
+    const std::string result = rt.run_tool("find_element", R"({"target":"кнопка ОК"})");
+    check(result.find("\"ok\":true") != std::string::npos, "зрение нашло элемент: " + result);
+    check(plat->clicks.size() == 1, "клик выполнен ядром (SendInput), а не моделью");
+    if (!plat->clicks.empty()) {
+        check(plat->clicks[0].first == 640 && plat->clicks[0].second == 360,
+              "координаты взяты из ответа зрения: " + std::to_string(plat->clicks[0].first) + "," +
+                  std::to_string(plat->clicks[0].second));
+    }
+    check(result.find("\"changed\":true") != std::string::npos,
+          "экран изменился — действие проверено, а не объявлено успешным");
+
+    // Кадра нет — честная ошибка, а не выдуманный клик.
+    std::system("pkill -f 'ai[.]fake_brain' >/dev/null 2>&1 || true");
+    std::this_thread::sleep_for(std::chrono::milliseconds(120));
+}
+
+static void test_vision_honest_failure() {
+    group("зрение: «не вижу» — это честный отказ");
+    const char* repo_env = std::getenv("AGENT_REPO_ROOT");
+    const std::string repo = repo_env ? repo_env : ".";
+    const std::string sock = "/tmp/agent_vision_none.sock";
+    std::remove(sock.c_str());
+    const std::string cmd = "cd " + repo +
+                            " && AGENT_FAKE_MODE=vision_none AGENT_FAKE_SOCKET=" + sock +
+                            " nohup python3 -m ai.fake_brain > /tmp/agent_vision_none.log 2>&1 &";
+    std::system(cmd.c_str());
+    bool up = false;
+    for (int i = 0; i < 300 && !up; ++i) {
+        up = fs::exists(sock);
+        if (!up) std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    check(up, "канал поднят");
+    if (up) {
+        auto platform = std::make_unique<MockPlatform>();
+        MockPlatform* plat = platform.get();
+        RuntimeConfig cfg;
+        cfg.preload = false;
+        cfg.state_dir = "/tmp/agent_vision_none_state";
+        cfg.ai_socket = sock;
+        AgentRuntime rt(cfg, std::move(platform));
+        std::string error;
+        rt.start(error);
+        const std::string result = rt.run_tool("find_element", R"({"target":"несуществующая кнопка"})");
+        check(result.find("\"ok\":false") != std::string::npos, "клика нет: " + result);
+        check(result.find("вижу") != std::string::npos, "причина названа словами пользователя");
+        check(plat->clicks.empty(), "ядро не кликало наугад");
+    }
+    std::system("pkill -f 'ai[.]fake_brain' >/dev/null 2>&1 || true");
+}
+
+// ---------------------------------------------------------------------------
+//  Подтверждение опасных действий и «Стоп» на уровне исполнителя
+// ---------------------------------------------------------------------------
+static void test_confirmation_gate() {
+    group("безопасность: модель не выполняет опасное без подтверждения");
+    {
+        auto rt_ptr = make_runtime();
+        AgentRuntime& rt = *rt_ptr;
+        rt.config().safety_mode = "confirm";
+        const std::string answer = rt.run_tool("delete_path", R"({"path":"C:/Work/123"})");
+        check(answer.find("\"needs_confirmation\":true") != std::string::npos,
+              "в режиме подтверждения действие остановлено: " + answer);
+        check(answer.find("требуется подтверждение") != std::string::npos,
+              "пользователю сказано, что именно нужно подтвердить");
+    }
+    {
+        auto rt_ptr = make_runtime();
+        AgentRuntime& rt = *rt_ptr;
+        rt.config().safety_mode = "auto";
+        const std::string answer = rt.run_tool("delete_path", R"({"path":"C:/Temp/*"})");
+        check(answer.find("\"needs_confirmation\":true") != std::string::npos,
+              "массовое удаление (маска) требует подтверждения и в auto: " + answer);
+    }
+    {
+        auto rt_ptr = make_runtime();
+        AgentRuntime& rt = *rt_ptr;
+        rt.config().safety_mode = "full";
+        const std::string answer = rt.run_tool("delete_path", R"({"path":"C:/Temp/one.txt"})");
+        check(answer.find("\"needs_confirmation\"") == std::string::npos,
+              "в полном режиме явное удаление одного файла не переспрашивает");
+    }
+}
+
+static void test_cancel_stops_agent_loop() {
+    group("«Стоп»: отмена доходит до исполнителя");
+    const char* repo_env = std::getenv("AGENT_REPO_ROOT");
+    const std::string repo = repo_env ? repo_env : ".";
+    const std::string sock = "/tmp/agent_cancel.sock";
+    std::remove(sock.c_str());
+    const std::string cmd = "cd " + repo +
+                            " && AGENT_FAKE_MODE=slow AGENT_FAKE_SOCKET=" + sock +
+                            " nohup python3 -m ai.fake_brain > /tmp/agent_cancel.log 2>&1 &";
+    std::system(cmd.c_str());
+    bool up = false;
+    for (int i = 0; i < 300 && !up; ++i) {
+        up = fs::exists(sock);
+        if (!up) std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    check(up, "канал поднят");
+    if (up) {
+        auto platform = std::make_unique<MockPlatform>();
+        RuntimeConfig cfg;
+        cfg.preload = false;
+        cfg.state_dir = "/tmp/agent_cancel_state";
+        cfg.ai_socket = sock;
+        AgentRuntime rt(cfg, std::move(platform));
+        std::string error;
+        rt.start(error);
+        std::atomic<bool> cancelled{false};
+        rt.set_cancel([&cancelled]() { return cancelled.load(); });
+        std::thread stopper([&cancelled]() {
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            cancelled.store(true);
+        });
+        const int64_t t0 = now_ms();
+        const std::string result = rt.run_task("дождись того, чего не будет", 3);
+        const int64_t ms = now_ms() - t0;
+        stopper.join();
+        check(ms < 2000, "ожидание прервано сразу, а не через 30 секунд (получено " +
+                             std::to_string(ms) + " мс)");
+        check(result.find("не сработал") != std::string::npos ||
+                  result.find("\"ok\":false") != std::string::npos,
+              "прерванная задача не объявлена успешной: " + result);
+    }
+    std::system("pkill -f 'ai[.]fake_brain' >/dev/null 2>&1 || true");
+}
+
+static void test_browser_path() {
+    group("браузерный путь: сложная страница через Playwright-мозг");
+    const char* repo_env = std::getenv("AGENT_REPO_ROOT");
+    const std::string repo = repo_env ? repo_env : ".";
+    const std::string sock = "/tmp/agent_browser.sock";
+    std::remove(sock.c_str());
+    const std::string cmd = "cd " + repo +
+                            " && AGENT_FAKE_SOCKET=" + sock +
+                            " nohup python3 -m ai.fake_brain > /tmp/agent_browser.log 2>&1 &";
+    std::system(cmd.c_str());
+    bool up = false;
+    for (int i = 0; i < 300 && !up; ++i) {
+        up = fs::exists(sock);
+        if (!up) std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+    check(up, "канал поднят");
+    if (!up) return;
+
+    auto platform = std::make_unique<MockPlatform>();
+    RuntimeConfig cfg;
+    cfg.preload = false;
+    cfg.state_dir = "/tmp/agent_browser_state";
+    cfg.ai_socket = sock;
+    AgentRuntime rt(cfg, std::move(platform));
+    std::string error;
+    rt.start(error);
+
+    const std::string opened = rt.run_tool(
+        "browser_task", R"({"action":"open","url":"https://youtube.com/results?search_query=котики"})");
+    check(opened.find("\"ok\":true") != std::string::npos, "страница открыта браузерным путём: " + opened);
+    check(opened.find("Кошки") != std::string::npos || opened.find("youtube") != std::string::npos,
+          "данные страницы попали в наблюдение");
+
+    const std::string text = rt.run_tool("playwright", R"({"action":"text","selector":"#results"})");
+    check(text.find("Котики") != std::string::npos || text.find("\"text\"") != std::string::npos,
+          "текст страницы извлечён: " + text);
+
+    const std::string bad = rt.run_tool("web_automation", R"({"action":"teleport"})");
+    check(bad.find("\"ok\":false") != std::string::npos &&
+              bad.find("неизвестное действие браузера") != std::string::npos,
+          "непонятное действие — честный отказ, а не «получилось»: " + bad);
+
+    // Без канала инструмент честно отказывает, а не молчит.
+    RuntimeConfig lonely;
+    lonely.preload = false;
+    lonely.state_dir = "/tmp/agent_browser_state2";
+    AgentRuntime rt2(lonely, std::make_unique<MockPlatform>());
+    rt2.start(error);
+    const std::string no_channel = rt2.run_tool("browser_task", R"({"action":"open","url":"x"})");
+    check(no_channel.find("канал к мозгу не настроен") != std::string::npos,
+          "без канала — понятная ошибка: " + no_channel);
+
+    std::system("pkill -f 'ai[.]fake_brain' >/dev/null 2>&1 || true");
+}
+
+// ---------------------------------------------------------------------------
 //  Полная сборка теста
 // ---------------------------------------------------------------------------
 int main(int argc, char** argv) {
@@ -883,6 +894,11 @@ int main(int argc, char** argv) {
         test_agent_loop();
         test_agent_loop_with_python_worker();
         test_agent_loop_failed_tool();
+        test_vision_roundtrip();
+        test_vision_honest_failure();
+        test_confirmation_gate();
+        test_browser_path();
+        test_cancel_stops_agent_loop();
         test_ipc();
         std::printf("\nитог: %d пройдено, %d провалено\n", g_passed, g_failed);
     }

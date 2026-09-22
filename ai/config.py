@@ -50,6 +50,7 @@ class WorkerConfig:
     request_timeout: float = field(default_factory=lambda: _env_float("AGENT_LLM_TIMEOUT", 120.0))
     vision_timeout: float = field(default_factory=lambda: _env_float("AGENT_VISION_TIMEOUT", 180.0))
     max_steps: int = field(default_factory=lambda: _env_int("AGENT_MAX_STEPS", 12))
+    browser_timeout_ms: int = field(default_factory=lambda: _env_int("AGENT_BROWSER_TIMEOUT", 15000))
     history_limit: int = field(default_factory=lambda: _env_int("AGENT_HISTORY_LIMIT", 24))
     native_tools: bool = field(default_factory=lambda: os.environ.get("AGENT_LLM_TOOLS", "1") != "0")
     log_level: str = field(default_factory=lambda: os.environ.get("AGENT_LOG_LEVEL", "INFO"))

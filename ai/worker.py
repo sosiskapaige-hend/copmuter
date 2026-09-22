@@ -27,6 +27,7 @@ from .config import WorkerConfig
 from .context import ContextManager
 from .llm import LLMError, LLMReply, LMStudioClient
 from .memory import Memory
+from .browser import BrowserError, BrowserSession
 from .vision import FrameGeometry, VisionService, click_call, parse_elements, pick_best
 
 log = logging.getLogger("ai.worker")
@@ -71,6 +72,9 @@ class AiWorker:
         )
         self.vision = vision or VisionService(self.client, timeout=self.config.vision_timeout,
                                               metrics=self.memory)
+        # Браузер поднимается лениво: пока задачи решаются прямыми ссылками и
+        # нативными инструментами, Chromium вообще не запускается.
+        self.browser = BrowserSession(timeout_ms=self.config.browser_timeout_ms)
         self._seen: dict[tuple[str, str], int] = {}
 
     # ------------------------------------------------------------------ план
@@ -219,6 +223,20 @@ class AiWorker:
         return protocol.plan_reply(request_id, [call], say=f"Нашёл «{element.label}»", finished=False)
 
     # ------------------------------------------------------------------ прочее
+    def handle_browser(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Сложная страница: Playwright. Прямые ссылки сюда не попадают — их делает ядро."""
+        steps = request.get("steps")
+        if isinstance(steps, list) and steps:
+            outcome = self.browser.run_batch(steps)
+        else:
+            outcome = self.browser.handle(request)
+        if not outcome.get("ok"):
+            return protocol.error_reply(request.get("id"), str(outcome.get("error") or "браузер не справился"))
+        data = outcome.get("data") if "data" in outcome else outcome
+        return protocol.text_reply(request.get("id"),
+                                   f"браузер: {outcome.get('action', 'шаг')} выполнен",
+                                   kind="browser") | {"data": data}
+
     def handle_compress(self, request: dict[str, Any]) -> dict[str, Any]:
         request_id = request.get("id")
         messages = request.get("messages") or []
@@ -262,6 +280,8 @@ class AiWorker:
             "steps_limit": self.config.max_steps,
             "client": self.client.stats,
             "tasks": self.memory.task_stats(),
+            "browser": {"running": self.browser.running, "actions": self.browser.actions,
+                        "errors": self.browser.errors},
             "metrics": self.memory.metrics_summary(),
         }
 
@@ -277,6 +297,8 @@ class AiWorker:
                 reply = self.handle_code(request)
             elif kind == "vision":
                 reply = self.handle_vision(request)
+            elif kind in ("browser", "playwright"):
+                reply = self.handle_browser(request)
             elif kind in ("compress", "summary"):
                 reply = self.handle_compress(request)
             elif kind == "preflight":
@@ -336,6 +358,7 @@ class AiWorker:
         return json.dumps(self.handle(request), ensure_ascii=False)
 
     def close(self) -> None:
+        self.browser.close()
         self.client.close()
         self.memory.close()
 

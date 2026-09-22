@@ -48,6 +48,30 @@ std::string AgentRuntime::run_task(std::string_view task, int max_steps) {
         return out;
     }
 
+    // 1.5) Путь зрения: «нажми кнопку X» — снимок → модель → клик ядра → проверка.
+    //      Без круга планирования: модель здесь нужна как глаза, а не как мозг.
+    if (fast.route == RouteKind::Vision) {
+        const Intent intent = intents_.parse(text);
+        const std::string target = intent.slot(SlotId::Target).str();
+        const std::string vision = vision_call("find", target, "{}");
+        const bool ok = vision.find("\"ok\":true") != std::string::npos;
+        std::string out = "{\"ok\":" + std::string(ok ? "true" : "false") +
+                          ",\"mode\":\"vision\",\"steps\":1";
+        out += ",\"tool_calls\":1,\"ms\":" + std::to_string(int((now_us() - t0) / 1000.0));
+        out += ",\"result\":" + vision;
+        out += ",\"message\":\"" + json_escape(ok ? ("Нашёл и нажал: " + target)
+                                                    : ("Не нашёл на экране: " + target)) + "\"";
+        if (!ok) {
+            const std::string why = json_get_str(vision, "error");
+            if (!why.empty()) out += ",\"error\":\"" + json_escape(why) + "\"";
+        }
+        out += "}";
+        count_task(ok, false, (now_us() - t0) / 1000.0, fast.route_us);
+        emit(Event{"task_done", "", ok ? "success" : "failed", target, out,
+                   (now_us() - t0) / 1000.0, now_ms()});
+        return out;
+    }
+
     // 2) Сложная задача: спрашиваем план у мозга (Python + Qwen3-VL).
     if (cfg_.ai_socket.empty()) {
         count_task(false, false, (now_us() - t0) / 1000.0, fast.route_us);
@@ -148,6 +172,10 @@ std::string AgentRuntime::run_task(std::string_view task, int max_steps) {
             const std::string output = json_get_str(result, "output");
             const std::string call_error = json_get_str(result, "error");
             if (!output.empty()) observation += " — " + keep_short(output, 300);
+            // Проверка результата — часть наблюдения: модель и пользователь видят одно и то же.
+            if (call_ok && (json_get_bool(result, "verified", false) ||
+                            json_get_bool(result, "changed", false)))
+                observation += " (проверено: результат подтверждён)";
             if (!call_ok && !call_error.empty()) observation += " (" + keep_short(call_error, 200) + ")";
             observations.push_back(observation);
             emit(Event{"observation", tool, call_ok ? "success" : "failed", observation, "",
@@ -176,6 +204,11 @@ std::string AgentRuntime::run_task(std::string_view task, int max_steps) {
     out += ",\"llm_calls\":" + std::to_string(llm_calls);
     out += ",\"tool_calls\":" + std::to_string(tool_calls);
     out += ",\"failed_calls\":" + std::to_string(failed_calls);
+    if (ok && failed_calls > 0) {
+        // Задача дошла до конца, но часть действий провалилась: об этом нужно сказать,
+        // иначе «готово» звучит как обещание, которого нет.
+        out += ",\"warnings\":[\"не сработало действий: " + std::to_string(failed_calls) + "\"]";
+    }
     out += ",\"ms\":" + std::to_string(int(total_ms));
     out += ",\"finished\":" + std::string(finished ? "true" : "false");
     if (!summary.empty()) out += ",\"message\":\"" + json_escape(summary) + "\"";

@@ -35,7 +35,7 @@ namespace {
 enum class Verb : uint8_t {
     Unknown = 0, Launch, Open, CreateFolder, CreateFile, Delete, Read, List, Move, Copy,
     SearchWeb, SearchVideo, Screenshot, Wallpaper, Volume, Power, Keys, Type, Kill, Run,
-    Settings, FindFiles, Code, ShowDesktop, Focus,
+    Settings, FindFiles, Code, ShowDesktop, Focus, ClickElement,
 };
 
 struct VerbRule {
@@ -72,6 +72,12 @@ const VerbRule kVerbs[] = {
     {"звук", Verb::Volume},
     {"выключи", Verb::Power},      {"перезагрузи", Verb::Power},
     {"заблокируй", Verb::Power},   {"усыпи", Verb::Power},
+    // «нажми кнопку ОК» — это клик по элементу (зрение/UIA), а не нажатие клавиши
+    // с именем «кнопку ок»: самая частая ошибка разбора в таких фразах.
+    {"нажми кнопку", Verb::ClickElement}, {"нажми на кнопку", Verb::ClickElement},
+    {"нажми на", Verb::ClickElement},     {"кликни по", Verb::ClickElement},
+    {"кликни", Verb::ClickElement},       {"щелкни по", Verb::ClickElement},
+    {"щелкни", Verb::ClickElement},       {"ткни в", Verb::ClickElement},
     {"нажми", Verb::Keys},         {"жми", Verb::Keys},
     {"напечатай", Verb::Type},     {"введи", Verb::Type}, {"напиши", Verb::Type},
     {"закрой", Verb::Kill},        {"убей", Verb::Kill}, {"останови", Verb::Kill},
@@ -629,6 +635,21 @@ Intent IntentEngine::parse_single(std::string_view phrase, bool allow_compound) 
             it.confidence = 0.9f;
             break;
         }
+        case Verb::ClickElement: {
+            std::string target = strip_tail_filler(obj_norm);
+            static const char* kPre[] = {"на ", "по ", "в "};
+            for (const char* pre : kPre) {
+                if (starts_with_word(target, pre) && std::strlen(pre) < target.size()) {
+                    target.erase(0, std::strlen(pre));
+                    while (!target.empty() && target.front() == ' ') target.erase(0, 1);
+                    break;
+                }
+            }
+            it.action = "click_element";
+            it.set(SlotId::Target, target);
+            it.confidence = 0.85f;
+            break;
+        }
         case Verb::Screenshot:
             it.action = "screenshot";
             it.confidence = 0.95f;
@@ -810,10 +831,19 @@ Intent IntentEngine::parse(std::string_view phrase) const {
         compound.raw = phrase;
         compound.confidence = 0.95f;
         compound.source = static_cast<uint8_t>(IntentSource::Rule);
+        // Сервис, названный в целом предложении, относится ко всем его частям:
+        // «открой ютуб и найди видео про котиков» — искать надо на YouTube, а не в Google.
+        const bool wants_video = contains_word(n, "ютуб") || contains_word(n, "youtube") ||
+                                 contains_word(n, "ютюб") || contains_word(n, "ютьюб") ||
+                                 contains_word(n, "ютубе");
         for (const std::string& p : parts) {
             Intent sub = parse_single(p, false);
             if (sub.action.view() == "agent_task") {
                 compound.confidence = 0.5f;   // составная команда с непонятной частью
+            }
+            if (wants_video && sub.action.view() == "web_search") {
+                sub.action = "youtube_search";
+                sub.confidence = 0.9f;
             }
             compound.parts.push_back(std::move(sub));
         }
