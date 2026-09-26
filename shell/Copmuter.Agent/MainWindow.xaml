@@ -138,7 +138,7 @@
             <!-- Приветствие: видно, пока в чате нет ни одного сообщения. -->
             <StackPanel Grid.Row="0" Spacing="14" VerticalAlignment="Top" Margin="0,36,0,0"
                         MaxWidth="620" HorizontalAlignment="Center"
-                        Visibility="{x:Bind ViewModel.ShowWelcome, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                        Visibility="{x:Bind ViewModel.WelcomeVisibility, Mode=OneWay}">
                 <TextBlock Text="Copmuter" FontSize="23" FontWeight="SemiBold"
                            Foreground="{StaticResource TextBrush}" HorizontalAlignment="Center" />
                 <TextBlock Text="Скажите, что нужно получить, — агент сам решит, как это сделать на этом компьютере."

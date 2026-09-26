@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Copmuter.Agent.Models;
 using Copmuter.Agent.Services;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml;
 
 namespace Copmuter.Agent.ViewModels;
 
@@ -96,8 +97,13 @@ public sealed class ChatViewModel : ObservableObject
     public bool IsConnected => true;
     public string FastRoutingMs => "< 12 ms";
 
-    /// <summary>Пустой чат: показываем приветствие с подсказками вместо пустоты.</summary>
-    public bool ShowWelcome => Messages.Count == 0;
+    /// <summary>
+    /// Пустой чат: показываем приветствие с подсказками вместо пустоты.
+    /// Готовое Visibility, а не bool: в Window нельзя применять конвертер внутри x:Bind —
+    /// генератор кода приводит Window к FrameworkElement и сборка падает (CS1503).
+    /// </summary>
+    public Visibility WelcomeVisibility =>
+        Messages.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
     public void Start()
     {
@@ -249,7 +255,7 @@ public sealed class ChatViewModel : ObservableObject
             return;
         }
         Messages.Add(new ChatMessage { Role = role, Text = text });
-        Raise(nameof(ShowWelcome));
+        Raise(nameof(WelcomeVisibility));
     }
 
     private void RefreshMetrics()
