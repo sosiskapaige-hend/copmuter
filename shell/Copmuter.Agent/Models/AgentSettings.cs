@@ -11,7 +11,8 @@ public sealed class AgentSettings : INotifyPropertyChanged
     private string _stateDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Copmuter");
     private string _socketPath = @"\\.\pipe\agent_ai_v1";
-    private string _pythonPath = "python";
+    private string _pythonPath = File.Exists(Path.Combine(AppContext.BaseDirectory, "python", "python.exe"))
+        ? Path.Combine(AppContext.BaseDirectory, "python", "python.exe") : "python";
     private string _repoRoot = AppContext.BaseDirectory;
     private string _safetyMode = "auto";
     private string _defaultBrowser = "";

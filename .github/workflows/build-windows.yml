@@ -3,12 +3,18 @@ name: Build Copmuter
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   build-windows:
     runs-on: windows-2022
-
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -18,45 +24,37 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Setup Python
+      - name: Setup Python (build checks only)
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.11.9'
+          architecture: x64
 
-      - name: Build C++ core
+      - name: Build C++20 Release core, host and tests
         shell: cmd
-        run: native\build_windows.bat
+        run: call native\build_windows.bat
 
-      - name: Restore .NET
-        run: dotnet restore shell\Copmuter.Agent\Copmuter.Agent.csproj
+      - name: Verify native ABI and Python worker
+        run: |
+          python native/tools/check_exports.py native/build/AgentRuntime.dll native/include/agent/runtime.h
+          if ($LASTEXITCODE -ne 0) { throw 'Native ABI check failed' }
+          python -m unittest discover -s ai/tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'AI worker tests failed' }
 
-      - name: Publish Windows app
-        run: >
-          dotnet publish shell\Copmuter.Agent\Copmuter.Agent.csproj
-          -c Release
-          -r win-x64
-          --self-contained true
-          --no-restore
-          -p:WindowsAppSDKSelfContained=true
-          -p:Platform=x64
+      - name: Publish self-contained Windows x64 app
+        run: >-
+          dotnet publish shell/Copmuter.Agent/Copmuter.Agent.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:WindowsAppSDKSelfContained=true -p:Platform=x64
+          -p:PublishSingleFile=false -p:PublishTrimmed=false
           -o publish
 
-      - name: Copy AI files
-        shell: pwsh
-        run: |
-          Copy-Item -Recurse ai publish\ai
+      - name: Package portable runtime and smoke-test extracted ZIP
+        run: ./scripts/package-windows.ps1
 
-      - name: Create ZIP
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force artifacts | Out-Null
-          Compress-Archive `
-            -Path publish\* `
-            -DestinationPath artifacts\Copmuter-win-x64.zip `
-            -Force
-
-      - name: Upload build
+      - name: Upload ZIP
         uses: actions/upload-artifact@v4
         with:
           name: Copmuter-win-x64
-          path: artifacts\Copmuter-win-x64.zip
+          path: artifacts/Copmuter-win-x64.zip
+          if-no-files-found: error

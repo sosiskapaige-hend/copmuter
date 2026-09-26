@@ -48,10 +48,11 @@ public sealed class ChatViewModel : ObservableObject
         get => _input;
         set
         {
-            if (SetProperty(ref _input, value))
+            if (_input != value)
             {
-                OnPropertyChanged(nameof(InputText));
-                OnPropertyChanged(nameof(CanSend));
+                SetProperty(ref _input, value);
+                Raise(nameof(InputText));
+                Raise(nameof(CanSend));
             }
         }
     }
@@ -79,10 +80,11 @@ public sealed class ChatViewModel : ObservableObject
         get => _busy;
         private set
         {
-            if (SetProperty(ref _busy, value))
+            if (_busy != value)
             {
-                OnPropertyChanged(nameof(CanSend));
-                OnPropertyChanged(nameof(CanStop));
+                SetProperty(ref _busy, value);
+                Raise(nameof(CanSend));
+                Raise(nameof(CanStop));
             }
         }
     }
