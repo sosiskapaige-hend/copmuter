@@ -31,8 +31,14 @@ jobs:
           architecture: x64
 
       - name: Build C++20 Release core, host and tests
-        shell: cmd
-        run: call native\build_windows.bat
+        run: |
+          $log = & cmd /c native\build_windows.bat 2>&1
+          $code = $LASTEXITCODE
+          $log | Write-Output
+          if ($code -ne 0) {
+            $log | Where-Object { $_ -match 'error|fatal|LNK[0-9]+' } | Select-Object -First 15 | ForEach-Object { Write-Output "::error::$_" }
+            throw "Native build failed ($code)"
+          }
 
       - name: Verify native ABI and Python worker
         run: |
