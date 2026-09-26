@@ -25,9 +25,16 @@ from typing import Any
 from . import prompts, protocol
 from .config import WorkerConfig
 from .context import ContextManager
+from .diagnostics import collect_system_diagnostics
+from .licensing import LicenseManager
 from .llm import LLMError, LLMReply, LMStudioClient
+from .loop_guard import LoopGuard
 from .memory import Memory
 from .browser import BrowserError, BrowserSession
+from .privacy import PrivacyManager
+from .security import CredentialVault, detect_prompt_injection, redact_secrets, wrap_untrusted_content
+from .tools import global_tool_registry
+from .undo import TransactionJournal
 from .vision import FrameGeometry, VisionService, click_call, parse_elements, pick_best
 
 log = logging.getLogger("ai.worker")
@@ -76,6 +83,13 @@ class AiWorker:
         # нативными инструментами, Chromium вообще не запускается.
         self.browser = BrowserSession(timeout_ms=self.config.browser_timeout_ms)
         self._seen: dict[tuple[str, str], int] = {}
+        # Подсистемы коммерческого продукта (ТЗ §37, §72, §144, §149, §160)
+        self.loop_guard = LoopGuard()
+        self.undo_journal = TransactionJournal(os.path.join(self.config.state_dir, "undo"))
+        self.privacy_manager = PrivacyManager(self.config.db_path, self.config.state_dir)
+        self.license_manager = LicenseManager(os.path.join(self.config.state_dir, "license.json"))
+        self.credential_vault = CredentialVault(os.path.join(self.config.state_dir, "vault"))
+        self.tool_registry = global_tool_registry
 
     # ------------------------------------------------------------------ план
     def handle_plan(self, request: dict[str, Any]) -> dict[str, Any]:
@@ -83,23 +97,43 @@ class AiWorker:
         task = str(request.get("task") or "").strip()
         if not task:
             return protocol.error_reply(request_id, "пустая задача")
+
+        # Проверка на Prompt Injection и маскирование секретов (ТЗ §141, §143)
+        inj = detect_prompt_injection(task)
+        if inj.is_injected:
+            log.warning("Prompt injection в задаче: %s", inj.matched_patterns)
+            task = inj.sanitized_text
+        task, _ = redact_secrets(task)
+
         step = int(request.get("step") or 1)
         max_steps = int(request.get("max_steps") or self.config.max_steps)
         if step <= 1:
             self._seen.clear()
+            self.loop_guard.clear()
 
         tools = request.get("tools") or []
         selected = self.context.select_tools(tools, task)
         schemas = to_openai_tools(selected) if self.config.native_tools else None
         self.context.facts = self.memory.facts()
 
+        # Очистка наблюдений от возможных секретов
+        raw_obs = list(request.get("observations") or [])
+        clean_obs = [redact_secrets(str(o))[0] for o in raw_obs]
+
+        extra_sys = ""
+        if step > 1:
+            is_loop, loop_msg = self.loop_guard.check()
+            if is_loop:
+                extra_sys = f"ВНИМАНИЕ: {loop_msg}"
+
         messages = self.context.build(
             task,
             history=[],
             state=request.get("state") or {},
-            observations=list(request.get("observations") or []),
+            observations=clean_obs,
             step=step,
             max_steps=max_steps,
+            extra_system=extra_sys,
             apps=list(request.get("apps") or []),
         )
         messages.append({"role": "user", "content": f"Задача: {task}\n\n{PLAN_INSTRUCTION}"})
@@ -117,7 +151,10 @@ class AiWorker:
         say = (reply.content or "").strip()
         # Инструмент, который ядро объявило, но не попало в контекст, всё равно исполним:
         # фильтр нужен только против выдуманных моделью имён.
-        calls = self._guard_repeats(extract_tool_calls(reply, tools), step)
+        raw_calls = extract_tool_calls(reply, tools)
+        calls = self._guard_repeats(raw_calls, step)
+        for c in calls:
+            self.loop_guard.record(c.get("tool", ""), c.get("args"), ok=True, step=step)
         if not calls:
             if _looks_finished(say) or step >= max_steps:
                 return protocol.plan_reply(request_id, [], say=say or "Готово", finished=True)
@@ -286,6 +323,43 @@ class AiWorker:
             "metrics": self.memory.metrics_summary(),
         }
 
+    def handle_diagnostics(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Сбор доказательной диагностики состояния системы (ТЗ §257, §258)."""
+        report = collect_system_diagnostics()
+        return {
+            "id": request.get("id"),
+            "ok": True,
+            "kind": "diagnostics",
+            "say": report.summary,
+            "output": report.evidence_text,
+            "data": report.to_dict(),
+            "calls": [],
+            "finished": True,
+        }
+
+    def handle_undo(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Откат последней обратимой файловой операции (ТЗ §37, §248)."""
+        ok, msg = self.undo_journal.undo_last()
+        return {
+            "id": request.get("id"),
+            "ok": ok,
+            "kind": "undo",
+            "say": msg,
+            "output": msg,
+            "error": "" if ok else msg,
+            "calls": [],
+            "finished": True,
+        }
+
+    def handle_custom_tool(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Обработка кастомных инструментов SDK (ТЗ §118)."""
+        tool_name = str(request.get("tool") or "")
+        if tool_name in ("system_diagnostics", "diagnostics"):
+            return self.handle_diagnostics(request)
+        if tool_name in ("undo_last_action", "undo"):
+            return self.handle_undo(request)
+        return protocol.error_reply(request.get("id"), f"неизвестный кастомный инструмент: {tool_name}")
+
     def handle(self, request: dict[str, Any]) -> dict[str, Any]:
         kind = str(request.get("type") or "")
         started = time.perf_counter()
@@ -304,6 +378,66 @@ class AiWorker:
                 reply = self.handle_compress(request)
             elif kind == "preflight":
                 reply = self.handle_preflight(request)
+            elif kind in ("diagnostics", "system_diagnostics"):
+                reply = self.handle_diagnostics(request)
+            elif kind in ("undo", "undo_last_action"):
+                reply = self.handle_undo(request)
+            elif kind == "privacy_inventory":
+                reply = {
+                    "id": request.get("id"),
+                    "ok": True,
+                    "kind": "privacy_inventory",
+                    "data": self.privacy_manager.get_inventory().to_dict(),
+                    "calls": [],
+                    "finished": True,
+                }
+            elif kind == "privacy_export":
+                out_path = request.get("path") or os.path.join(self.config.state_dir, "export.json")
+                exported = self.privacy_manager.export_data(out_path)
+                reply = {
+                    "id": request.get("id"),
+                    "ok": True,
+                    "kind": "privacy_export",
+                    "path": exported,
+                    "say": f"Данные экспортированы в {exported}",
+                    "calls": [],
+                    "finished": True,
+                }
+            elif kind == "privacy_purge":
+                cats = request.get("categories") or ["all"]
+                purged = self.privacy_manager.purge_data(cats)
+                reply = {
+                    "id": request.get("id"),
+                    "ok": True,
+                    "kind": "privacy_purge",
+                    "data": purged,
+                    "say": "Выбранные данные удалены",
+                    "calls": [],
+                    "finished": True,
+                }
+            elif kind == "license_status":
+                reply = {
+                    "id": request.get("id"),
+                    "ok": True,
+                    "kind": "license_status",
+                    "data": self.license_manager.status.to_dict(),
+                    "calls": [],
+                    "finished": True,
+                }
+            elif kind == "license_activate":
+                key = str(request.get("key") or "")
+                ok, msg = self.license_manager.activate(key)
+                reply = {
+                    "id": request.get("id"),
+                    "ok": ok,
+                    "kind": "license_activate",
+                    "say": msg,
+                    "data": self.license_manager.status.to_dict(),
+                    "calls": [],
+                    "finished": True,
+                }
+            elif kind == "tool":
+                reply = self.handle_custom_tool(request)
             elif kind == "health":
                 reply = {"id": request.get("id"), "ok": True, "kind": "health",
                          "say": f"воркер жив, модель {self.config.model}",

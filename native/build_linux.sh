@@ -31,22 +31,35 @@ CORE_SOURCES=(
   src/abi.cpp
 )
 
-echo "== ядро и тесты"
-$CXX $CXXFLAGS -Iinclude tests/test_core.cpp "${CORE_SOURCES[@]}" -lpthread -o "$BUILD/agent_tests"
+CORE_OBJS=()
+pids=()
+echo "== компиляция модулей ядра"
+for src in "${CORE_SOURCES[@]}"; do
+  obj="$BUILD/$(basename "$src" .cpp).o"
+  CORE_OBJS+=("$obj")
+  if [[ ! -f "$obj" || "$src" -nt "$obj" ]]; then
+    $CXX $CXXFLAGS -Iinclude -c "$src" -o "$obj" &
+    pids+=($!)
+  fi
+done
 
-echo "== agent_scenarios (обязательные сценарии ТЗ)"
-$CXX $CXXFLAGS -Iinclude -Itests tests/test_scenarios.cpp "${CORE_SOURCES[@]}" -lpthread \
-  -o "$BUILD/agent_scenarios"
+for pid in "${pids[@]}"; do
+  wait "$pid"
+done
 
-echo "== agent_host"
-$CXX $CXXFLAGS -Iinclude src/host_main.cpp "${CORE_SOURCES[@]}" -lpthread -o "$BUILD/agent_host"
+echo "== сборка agent_tests"
+$CXX $CXXFLAGS -Iinclude tests/test_core.cpp "${CORE_OBJS[@]}" -lpthread -o "$BUILD/agent_tests"
+
+echo "== сборка agent_scenarios"
+$CXX $CXXFLAGS -Iinclude -Itests tests/test_scenarios.cpp "${CORE_OBJS[@]}" -lpthread -o "$BUILD/agent_scenarios"
+
+echo "== сборка agent_host"
+$CXX $CXXFLAGS -Iinclude src/host_main.cpp "${CORE_OBJS[@]}" -lpthread -o "$BUILD/agent_host"
 
 echo "готово: $BUILD/agent_tests, $BUILD/agent_scenarios, $BUILD/agent_host"
 
 if [[ "${1:-}" == "--cross" ]]; then
   echo
-  # Windows-код здесь не запустить, но можно убедиться, что он компилируется и
-  # линкуется под x86_64-windows, а DLL отдаёт ровно тот C ABI, что ждёт C#.
   ./build_windows_cross.sh
 fi
 

@@ -285,3 +285,165 @@ class LMStudioClient:
     @property
     def stats(self) -> dict:
         return {"calls": self._calls, "errors": self._errors, "last_ms": round(self._last_ms, 1)}
+
+
+@dataclass
+class ProviderConfig:
+    """Конфигурация провайдера модели (ТЗ §19, §127)."""
+    name: str = "lm_studio"
+    endpoint: str = "http://127.0.0.1:1234/v1"
+    model: str = "qwen3-vl-8b-instruct"
+    api_key: str = "lm-studio"
+    priority: int = 1
+    supports_vision: bool = True
+    supports_tools: bool = True
+    timeout: float = 120.0
+
+
+class ModelRouter:
+    """Маршрутизатор моделей с автоматическим переключением (Fallback Graph) (ТЗ §24, §127).
+
+    Если основной локальный провайдер (LM Studio) недоступен или выдаёт ошибку,
+    запрос автоматически перенаправляется на резервный (например, Ollama или облачный OpenAI).
+    """
+
+    def __init__(self, providers: list[ProviderConfig] | None = None) -> None:
+        if not providers:
+            providers = [
+                ProviderConfig(name="lm_studio", endpoint="http://127.0.0.1:1234/v1", model="qwen3-vl-8b-instruct", priority=1),
+                ProviderConfig(name="ollama", endpoint="http://127.0.0.1:11434/v1", model="qwen2.5:7b", priority=2),
+            ]
+        self.providers = sorted(providers, key=lambda p: p.priority)
+        self.clients: list[tuple[ProviderConfig, LMStudioClient]] = [
+            (
+                p,
+                LMStudioClient(
+                    endpoint=p.endpoint,
+                    model=p.model,
+                    api_key=p.api_key,
+                    timeout=p.timeout,
+                ),
+            )
+            for p in self.providers
+        ]
+        self._active_index = 0
+        self._fallback_count = 0
+
+    @property
+    def active_config(self) -> ProviderConfig:
+        return self.clients[self._active_index][0]
+
+    @property
+    def active_client(self) -> LMStudioClient:
+        return self.clients[self._active_index][1]
+
+    @property
+    def model(self) -> str:
+        return self.active_client.model
+
+    @property
+    def host(self) -> str:
+        return self.active_client.host
+
+    @property
+    def port(self) -> int:
+        return self.active_client.port
+
+    def close(self) -> None:
+        for _, client in self.clients:
+            client.close()
+
+    def chat(
+        self,
+        messages: list[dict],
+        *,
+        tools: list[dict] | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        timeout: float | None = None,
+        tool_choice: str | dict | None = None,
+    ) -> LLMReply:
+        """Отправка запроса с отказоустойчивым переключением провайдеров."""
+        errors: list[str] = []
+        for idx in range(len(self.clients)):
+            config, client = self.clients[idx]
+            try:
+                reply = client.chat(
+                    messages,
+                    tools=tools,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    timeout=timeout,
+                    tool_choice=tool_choice,
+                )
+                if idx != self._active_index:
+                    log.warning("Fallback: переключились на провайдер %s (%s)", config.name, config.model)
+                    self._active_index = idx
+                    self._fallback_count += 1
+                return reply
+            except LLMError as exc:
+                errors.append(f"{config.name}: {exc}")
+                log.info("Провайдер %s недоступен: %s. Пробую следующий...", config.name, exc)
+
+        raise LLMError(f"Все провайдеры моделей отклонили запрос: {'; '.join(errors)}")
+
+    def vision(
+        self,
+        prompt: str,
+        image_bytes: bytes | None = None,
+        *,
+        image_path: str | None = None,
+        mime: str = "image/png",
+        system: str | None = None,
+        max_tokens: int | None = None,
+        timeout: float | None = None,
+    ) -> LLMReply:
+        """Отправка изображения с автоматическим поиском провайдера с поддержкой Vision."""
+        errors: list[str] = []
+        for idx in range(len(self.clients)):
+            config, client = self.clients[idx]
+            if not config.supports_vision:
+                continue
+            try:
+                return client.vision(
+                    prompt,
+                    image_bytes,
+                    image_path=image_path,
+                    mime=mime,
+                    system=system,
+                    max_tokens=max_tokens,
+                    timeout=timeout,
+                )
+            except LLMError as exc:
+                errors.append(f"{config.name}: {exc}")
+
+        raise LLMError(f"Все Vision-провайдеры отклонили запрос: {'; '.join(errors)}")
+
+    def preflight(self, *, need_vision: bool = True, need_tools: bool = True) -> dict:
+        """Проверяет состояние всех настроенных провайдеров."""
+        results: list[dict] = []
+        any_ready = False
+        for config, client in self.clients:
+            res = client.preflight(need_vision=need_vision, need_tools=need_tools)
+            res["provider"] = config.name
+            results.append(res)
+            if res.get("ready"):
+                any_ready = True
+
+        return {
+            "ready": any_ready,
+            "active_provider": self.active_config.name,
+            "model": self.model,
+            "providers": results,
+            "fallback_count": self._fallback_count,
+        }
+
+    @property
+    def stats(self) -> dict:
+        return {
+            "active_provider": self.active_config.name,
+            "active_model": self.model,
+            "fallback_count": self._fallback_count,
+            "clients": {cfg.name: cl.stats for cfg, cl in self.clients},
+        }
+
