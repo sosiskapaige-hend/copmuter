@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../Copmuter.Agent/Models/*.cs" Link="Models/%(Filename)%(Extension)" />
+    <Compile Include="../Copmuter.Agent/ViewModels/ObservableObject.cs" Link="ObservableObject.cs" />
+    <Compile Include="../Copmuter.Agent/Services/WorkspaceStore.cs" Link="WorkspaceStore.cs" />
+    <Compile Include="../Copmuter.Agent/Services/ModelProbe.cs" Link="ModelProbe.cs" />
+    <Compile Include="../Copmuter.Agent/Services/LogTail.cs" Link="LogTail.cs" />
+  </ItemGroup>
+</Project>

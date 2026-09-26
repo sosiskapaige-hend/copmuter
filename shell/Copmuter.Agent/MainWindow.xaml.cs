@@ -121,11 +121,11 @@ public sealed partial class MainWindow : Window
         {
             var scale = Root.XamlRoot?.RasterizationScale ?? 1.0;
             var inset = AppWindow.TitleBar.RightInset / scale;
-            CaptionSpacer.Width = inset > 0 ? inset : 140;
+            CaptionSpacer.Width = new GridLength(inset > 0 ? inset : 140);
         }
         catch (Exception)
         {
-            CaptionSpacer.Width = 140;
+            CaptionSpacer.Width = new GridLength(140);
         }
     }
 
