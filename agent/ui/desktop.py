@@ -47,7 +47,7 @@ def _dpi_aware() -> None:
 
 
 def run_desktop(rt, headless: bool = False, width: int = 1340, height: int = 860,
-                title: str = "AI Computer Agent") -> tuple:
+                title: str = "Copmuter") -> tuple:
     """Запускает UI. Возвращает (ui, url). В оконном режиме блокирует,
     пока окно открыто."""
     from .web import serve

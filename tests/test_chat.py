@@ -188,7 +188,7 @@ class TestChat(unittest.IsolatedAsyncioTestCase):
     def test_10_index_page(self):
         with urllib.request.urlopen(self.base + "/", timeout=10) as r:
             html = r.read().decode()
-        self.assertIn("AI Computer Agent", html)
+        self.assertIn("Copmuter", html)
         self.assertIn("Создай папку", html)
 
 
