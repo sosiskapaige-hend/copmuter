@@ -14,6 +14,8 @@ public sealed class WorkerOptions
     public string SocketPath { get; set; } = @"\\.\pipe\agent_ai_v1";
     public string StateDir { get; set; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Copmuter");
+    public string LlmUrl { get; set; } = "";
+    public string LlmModel { get; set; } = "";
     public string LogPath { get; set; } = "";
 }
 
@@ -22,7 +24,7 @@ public sealed class WorkerProcess : IDisposable
 {
     private readonly WorkerOptions _options;
     private Process? _process;
-    private int _restarts;
+    private volatile bool _disposed;
 
     public event EventHandler<string>? LogReceived;
 
@@ -39,7 +41,7 @@ public sealed class WorkerProcess : IDisposable
 
     public void Start()
     {
-        if (IsRunning)
+        if (_disposed || IsRunning)
         {
             return;
         }
@@ -63,6 +65,15 @@ public sealed class WorkerProcess : IDisposable
         info.Environment["AGENT_STATE_DIR"] = _options.StateDir;
         info.Environment["PYTHONIOENCODING"] = "utf-8";
         info.Environment["PYTHONUNBUFFERED"] = "1";
+        // Адрес и имя модели из параметров окна: воркер читает AGENT_LLM_URL/AGENT_LLM_MODEL.
+        if (!string.IsNullOrWhiteSpace(_options.LlmUrl))
+        {
+            info.Environment["AGENT_LLM_URL"] = _options.LlmUrl;
+        }
+        if (!string.IsNullOrWhiteSpace(_options.LlmModel))
+        {
+            info.Environment["AGENT_LLM_MODEL"] = _options.LlmModel;
+        }
 
         _process = new Process { StartInfo = info, EnableRaisingEvents = true };
         _process.OutputDataReceived += (_, e) => Publish(e.Data);
@@ -77,12 +88,7 @@ public sealed class WorkerProcess : IDisposable
     private void OnExited()
     {
         Publish("воркер остановился");
-        // Один честный перезапуск: мозг не должен «умирать молча» посреди сессии.
-        if (_restarts++ < 1)
-        {
-            Publish("перезапускаю воркер");
-            Start();
-        }
+        // Restart is explicit via Apply settings; never respawn after window close.
     }
 
     private void Publish(string? line)
@@ -131,6 +137,7 @@ public sealed class WorkerProcess : IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
         try
         {
             if (IsRunning && _process is not null)

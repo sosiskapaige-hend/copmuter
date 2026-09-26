@@ -23,13 +23,42 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         // ViewModel готовим до InitializeComponent: x:Bind читает его при загрузке XAML.
-        ViewModel = new ChatViewModel(new AgentSettings());
+        var workspace = WorkspaceStore.Load(out var loadError);
+        ViewModel = new ChatViewModel(workspace);
         InitializeComponent();
         ConfigureGlassWindow();
         LoadBrandAssets();
-        Closed += (_, _) => ViewModel.Shutdown();
+        AppWindow.Resize(new Windows.Graphics.SizeInt32(1280, 860));
         ViewModel.ConfirmationRequested += OnConfirmationRequestedAsync;
-        ViewModel.Start();
+        Root.Loaded += async (_, _) =>
+        {
+            foreach (ComboBoxItem item in SafetyModeBox.Items)
+                if ((string)item.Tag == ViewModel.Settings.SafetyMode) SafetyModeBox.SelectedItem = item;
+            UpdateNavigation();
+            ObserveMessages();
+            await ViewModel.StartAsync();
+            if (loadError.Length > 0) ViewModel.ReportError(loadError);
+        };
+        AppWindow.Closing += async (_, e) =>
+        {
+            if (_allowClose) return;
+            e.Cancel = true;
+            if (_closing) return;
+            _closing = true;
+            _confirmation?.Hide();
+            Root.IsHitTestVisible = false;
+            await ViewModel.ShutdownAsync();
+            _allowClose = true;
+            Close();
+        };
+        ViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ViewModel.ActiveChat)) ObserveMessages();
+            if (e.PropertyName == nameof(ViewModel.Tab)) UpdateNavigation();
+        };
+        var newChat = new KeyboardAccelerator { Key = VirtualKey.N, Modifiers = VirtualKeyModifiers.Control };
+        newChat.Invoked += (_, e) => { ViewModel.NewChat(); InputBox.Focus(FocusState.Programmatic); e.Handled = true; };
+        Root.KeyboardAccelerators.Add(newChat);
     }
 
     public ChatViewModel ViewModel { get; }
@@ -56,15 +85,7 @@ public sealed partial class MainWindow : Window
 
         try
         {
-            // Mica — сдержанная материя Windows 11: обои угадываются под тёмной
-            // подложкой, но не спорят с содержимым. Акрил — более «стеклянный»
-            // вариант, доступный с Windows 10 1809.
-            if (MicaController.IsSupported())
-            {
-                SystemBackdrop = new MicaBackdrop();
-                return;
-            }
-
+            // Desktop acrylic samples windows behind us; Mica samples wallpaper only.
             if (DesktopAcrylicController.IsSupported())
             {
                 SystemBackdrop = new DesktopAcrylicBackdrop();
@@ -144,35 +165,124 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    // Диалог подтверждения: рантайм держит опасное действие на паузе, ждём ответ.
+    private ContentDialog? _confirmation;
+    private bool _allowClose, _closing;
+    private System.Collections.ObjectModel.ObservableCollection<ChatMessage>? _observedMessages;
+
     private async void OnConfirmationRequestedAsync(object? sender, string question)
     {
-        var dialog = new ContentDialog
+        if (_closing || _confirmation is not null) { ViewModel.AnswerConfirmation(false); return; }
+        var approved = false;
+        try
         {
-            Title = "Подтвердите действие",
-            Content = question,
-            PrimaryButtonText = "Выполнить",
-            CloseButtonText = "Отмена",
-            DefaultButton = ContentDialogButton.Close,   // Enter не должен удалять
-            XamlRoot = Content.XamlRoot,
-        };
-        var result = await dialog.ShowAsync();
-        ViewModel.AnswerConfirmation(result == ContentDialogResult.Primary);
+            _confirmation = new ContentDialog
+            {
+                Title = "Разрешить действие?", Content = question,
+                PrimaryButtonText = "Разрешить", CloseButtonText = "Отмена",
+                DefaultButton = ContentDialogButton.Close, XamlRoot = Root.XamlRoot,
+                RequestedTheme = ElementTheme.Dark,
+            };
+            approved = await _confirmation.ShowAsync() == ContentDialogResult.Primary;
+        }
+        catch (Exception ex) { ViewModel.ReportError("Диалог не открылся: " + ex.Message); }
+        finally { _confirmation = null; ViewModel.AnswerConfirmation(approved); }
     }
 
-    private void OnStopClick(object sender, RoutedEventArgs e) => ViewModel.Stop();
+    private void OnStopClick(object sender, RoutedEventArgs e)
+    {
+        _confirmation?.Hide();
+        ViewModel.Stop();
+    }
 
     private async void OnInputKeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (e.Key == VirtualKey.Enter && !e.KeyStatus.IsMenuKeyDown)
+        var shift = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift);
+        if (e.Key == VirtualKey.Enter && (shift & Windows.UI.Core.CoreVirtualKeyStates.Down) == 0)
         {
             e.Handled = true;
             await ViewModel.SendAsync();
         }
     }
 
-    private void OnSettingsToggled(object sender, RoutedEventArgs e)
+    private void OnNewChatClick(object sender, RoutedEventArgs e)
     {
-        // Панель настроек показывается привязкой; здесь ничего делать не нужно.
+        ViewModel.NewChat(); InputBox.Focus(FocusState.Programmatic);
+    }
+    private void OnNavigate(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string tab } && Enum.TryParse<AppTab>(tab, out var value)) ViewModel.Tab = value;
+    }
+    private void UpdateNavigation()
+    {
+        foreach (var button in new[] { ChatNav, JournalNav, DiagnosticsNav, SettingsNav })
+            button.Background = (string)button.Tag == ViewModel.Tab.ToString()
+                ? (Brush)Application.Current.Resources["AccentSoftBrush"] : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+    }
+    private void OnChatSelected(object sender, SelectionChangedEventArgs e)
+    {
+        if (e.AddedItems.Count > 0) ViewModel.Tab = AppTab.Chat;
+    }
+    private async void OnDeleteChatClick(object sender, RoutedEventArgs e)
+    {
+        if (_confirmation is not null) return;
+        var chat = ViewModel.ActiveChat;
+        var dialog = new ContentDialog
+        {
+            Title = "Удалить задачу?", Content = "Переписка будет удалена с этого компьютера. Выполненные действия не откатываются.",
+            PrimaryButtonText = "Удалить", CloseButtonText = "Отмена", DefaultButton = ContentDialogButton.Close,
+            XamlRoot = Root.XamlRoot, RequestedTheme = ElementTheme.Dark,
+        };
+        try
+        {
+            // Do not compete with the runtime's safety dialog.
+            if (ViewModel.IsBusy) { ViewModel.ReportError("Сначала дождитесь завершения задачи."); return; }
+            _confirmation = dialog;
+            if (await dialog.ShowAsync() == ContentDialogResult.Primary && ReferenceEquals(chat, ViewModel.ActiveChat))
+                ViewModel.DeleteActiveChat();
+        }
+        finally { _confirmation = null; }
+    }
+    private async void OnCheckModelClick(object sender, RoutedEventArgs e) => await ViewModel.RefreshModelAsync();
+    private async void OnApplySettingsClick(object sender, RoutedEventArgs e) => await ViewModel.ApplySettingsAsync();
+    private async void OnRefreshDiagnosticsClick(object sender, RoutedEventArgs e) => await ViewModel.RefreshDiagnosticsAsync();
+    private async void OnRefreshJournalClick(object sender, RoutedEventArgs e) => await ViewModel.RefreshJournalAsync();
+    private async void OnOpenStateFolderClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Directory.CreateDirectory(ViewModel.Settings.StateDir);
+            var folder = await Windows.Storage.StorageFolder.GetFolderFromPathAsync(ViewModel.Settings.StateDir);
+            if (!await Launcher.LaunchFolderAsync(folder)) ViewModel.ReportError("Windows не смогла открыть папку.");
+        }
+        catch (Exception ex) { ViewModel.ReportError("Не удалось открыть папку: " + ex.Message); }
+    }
+    private void OnSafetyModeChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (SafetyModeBox.SelectedItem is ComboBoxItem { Tag: string mode }) ViewModel.Settings.SafetyMode = mode;
+    }
+    private void OnRootSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        // The same UI collapses to icon navigation on smaller windows.
+        if (SidebarColumn is null || HistoryPanel is null) return;
+        var compact = e.NewSize.Width < 980;
+        SidebarColumn.Width = new GridLength(compact ? 72 : 248);
+        foreach (var label in new[] { NewChatLabel, ChatNavLabel, JournalNavLabel, DiagnosticsNavLabel, SettingsNavLabel })
+            label.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+        HistoryPanel.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+    }
+    private void ObserveMessages()
+    {
+        if (_observedMessages is not null) _observedMessages.CollectionChanged -= OnMessagesChanged;
+        _observedMessages = ViewModel.ActiveChat.Messages;
+        _observedMessages.CollectionChanged += OnMessagesChanged;
+    }
+    private void OnMessagesChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        if (MessageScroll.ScrollableHeight - MessageScroll.VerticalOffset > 100) return;
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            MessageScroll.UpdateLayout();
+            MessageScroll.ChangeView(null, MessageScroll.ScrollableHeight, null, true);
+        });
     }
 }

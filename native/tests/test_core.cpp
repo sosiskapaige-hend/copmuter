@@ -428,6 +428,53 @@ static void test_abi() {
     check(true, "agent_shutdown прошёл");
 }
 
+// Regression: the C ABI (not only direct AgentRuntime calls) must allow control
+// requests while execution holds g_mu. All test operations are explicitly denied.
+static void test_abi_controls() {
+    group("ABI: stop and confirmation stay responsive during execution");
+    const std::string dir = (fs::temp_directory_path() / "copmuter-abi-controls").string();
+    const std::string config = "{\"state_dir\":\"" + json_escape(dir) +
+        "\",\"preload\":false,\"safety_mode\":\"confirm\",\"confirm_timeout_ms\":4000}";
+    for (bool cancel : {false, true}) {
+        check(agent_init(config.c_str()) == 0, "ABI control runtime starts");
+        std::atomic<bool> pending{false};
+        agent_set_event_sink([](const char* json, void* data) {
+            if (std::string(json).find("\"pending\"") != std::string::npos)
+                static_cast<std::atomic<bool>*>(data)->store(true);
+        }, &pending);
+        std::string result;
+        std::thread command([&] {
+            char* raw = agent_execute("выполни echo copmuter-control-test");
+            result = raw ? raw : "";
+            agent_free(raw);
+        });
+        for (int i = 0; i < 300 && !pending.load(); ++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        check(pending.load(), "execution reached confirmation");
+        const auto start = now_ms();
+        if (cancel) agent_cancel_current();
+        else agent_answer_confirmation(0);
+        const auto elapsed = now_ms() - start;
+        command.join();
+        check(elapsed < 500, "control call returned without waiting for command mutex");
+        check(result.find("\"ok\":true") == std::string::npos, "denied operation did not execute");
+        agent_set_event_sink(nullptr, nullptr);
+        agent_shutdown();
+    }
+    // Synchronous replies must not be lost before confirm_pending_ is armed.
+    check(agent_init(config.c_str()) == 0, "runtime starts for inline reply");
+    agent_set_event_sink([](const char* json, void*) {
+        if (std::string(json).find("\"pending\"") != std::string::npos)
+            agent_answer_confirmation(0);
+    }, nullptr);
+    const auto start = now_ms();
+    char* raw = agent_execute("выполни echo copmuter-control-test");
+    agent_free(raw);
+    check(now_ms() - start < 500, "immediate refusal is not lost");
+    agent_set_event_sink(nullptr, nullptr);
+    agent_shutdown();
+}
+
 // ---------------------------------------------------------------------------
 //  Канал C++ ↔ Python (постоянный воркер, framed JSON)
 // ---------------------------------------------------------------------------
@@ -1194,6 +1241,10 @@ static void test_cancel_stops_model_wait() {
 //  Полная сборка теста
 // ---------------------------------------------------------------------------
 int main(int argc, char** argv) {
+    if (argc > 1 && std::string(argv[1]) == "--abi-controls") {
+        test_abi_controls();
+        return g_failed == 0 ? 0 : 1;
+    }
     const bool bench_only = argc > 1 && std::string(argv[1]) == "--bench";
     const int iterations = argc > 2 ? std::atoi(argv[2]) : 2000;
 
@@ -1207,6 +1258,7 @@ int main(int argc, char** argv) {
         test_waits();
         test_runtime_cycle();
         test_abi();
+        test_abi_controls();
         test_run_tool();
         test_launch_failure_is_fast();
         test_agent_loop();

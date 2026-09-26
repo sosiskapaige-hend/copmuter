@@ -121,6 +121,9 @@ public sealed class NativeRuntime : IDisposable
     private static extern IntPtr agent_state_json();
 
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr agent_tools_json();
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern void agent_set_event_sink(AgentEventCallback callback, IntPtr userData);
 
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
@@ -157,7 +160,8 @@ public sealed class NativeRuntime : IDisposable
             ["default_browser"] = settings.DefaultBrowser,
             ["language"] = settings.Language,
             ["preload"] = settings.Preload,
-            ["fast_path"] = true,
+            ["fast_path"] = settings.FastRouteDirect,
+            ["ai_socket"] = settings.SocketPath,
             ["launch_timeout_ms"] = settings.LaunchTimeoutMs,
             ["vision_timeout_ms"] = settings.VisionTimeoutMs,
             ["max_retries"] = settings.MaxRetries,
@@ -267,6 +271,9 @@ public sealed class NativeRuntime : IDisposable
     public string MetricsJson() => ReadAndFree(agent_metrics_json());
 
     public string StateJson() => ReadAndFree(agent_state_json());
+
+    /// <summary>Список инструментов ядра: что доступно в этой сборке.</summary>
+    public string ToolsJson() => ReadAndFree(agent_tools_json());
 
     public void Cancel() => agent_cancel_current();
 

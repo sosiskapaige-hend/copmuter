@@ -61,6 +61,12 @@ jobs:
             throw "Native build failed ($code)"
           }
 
+      - name: Verify stop and confirmation through C ABI
+        timeout-minutes: 2
+        run: |
+          & native/build/agent_tests.exe --abi-controls
+          if ($LASTEXITCODE -ne 0) { throw 'ABI control regression tests failed' }
+
       - name: Verify native ABI and Python worker
         run: |
           $log = & python native/tools/check_exports.py native/build/AgentRuntime.dll native/include/agent/runtime.h 2>&1
@@ -110,6 +116,14 @@ jobs:
         run: |
           try { ./scripts/package-windows.ps1 }
           catch { Write-Output "::error::$_"; throw }
+
+      - name: Upload actual WinUI screenshots and interaction results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Copmuter-ui-check
+          path: artifacts/ui-smoke/
+          if-no-files-found: ignore
 
       - name: Upload ZIP
         uses: actions/upload-artifact@v4

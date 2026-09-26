@@ -501,8 +501,8 @@ bool AgentRuntime::confirmation_pending() const {
 bool AgentRuntime::ask_user(std::string_view question, std::string& reason) {
     const std::string text(question);
     debug("confirm", "спрашиваю: " + text);
-    emit(Event{"confirm", "", "pending", text, "", 0.0, now_ms()});
     if (confirm_fn_) {
+        emit(Event{"confirm", "", "pending", text, "", 0.0, now_ms()});
         if (confirm_fn_(text, cfg_.confirm_timeout_ms)) return true;
         reason = "пользователь отказался";
         debug("confirm", "отказано (обработчик UI)");
@@ -516,9 +516,14 @@ bool AgentRuntime::ask_user(std::string_view question, std::string& reason) {
     std::unique_lock<std::mutex> lock(confirm_mu_);
     confirm_pending_ = true;
     confirm_answer_ = false;
+    // Publish after arming the wait. A synchronous UI reply must not be lost.
+    lock.unlock();
+    emit(Event{"confirm", "", "pending", text, "", 0.0, now_ms()});
+    lock.lock();
+    if (cancel_ && cancel_()) confirm_pending_ = false;
     const bool answered = confirm_cv_.wait_for(lock, std::chrono::milliseconds(cfg_.confirm_timeout_ms),
                                                [this] { return !confirm_pending_; });
-    const bool approved = answered && confirm_answer_;
+    const bool approved = answered && confirm_answer_ && !(cancel_ && cancel_());
     confirm_pending_ = false;
     if (!approved) {
         reason = answered ? "пользователь отказался" : "ответа на подтверждение не было";

@@ -70,9 +70,7 @@ std::vector<std::vector<int>> ActionQueue::groups() const {
 
 void ActionQueue::cancel() {
     cancelled_.store(true);
-    for (ActionSpec& a : actions_) {
-        if (a.state == ActionState::Queued) a.state = ActionState::Cancelled;
-    }
+    // Only the execution thread may mutate actions_; cancel is called by the UI.
 }
 
 BatchResult ActionQueue::run(const CallFn& call, const VerifyFn& verify, bool stop_on_error) {
@@ -182,7 +180,11 @@ BatchResult ActionQueue::run(const CallFn& call, const VerifyFn& verify, bool st
         }
     }
 
-    bool ok = true;
+    if (cancelled_.load()) {
+        for (ActionSpec& a : actions_)
+            if (a.state == ActionState::Queued) a.state = ActionState::Cancelled;
+    }
+    bool ok = !cancelled_.load();
     for (const ActionSpec& a : actions_) {
         if (a.state == ActionState::Failed || a.state == ActionState::Timeout) {
             if (!a.soft) ok = false;

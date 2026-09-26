@@ -1,406 +1,205 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  Главное окно Copmuter: стеклянная шапка, рейл навигации, чат, параметры, статус.
-
-  Облик окна задаётся токенами из App.xaml (бирюза #35DFCC, панели с прозрачностью
-  и hairline-обводками) — это единственный дизайн приложения, который попадает в
-  сборку. Настоящее стекло даёт SystemBackdrop (DesktopAcrylicBackdrop), поэтому
-  фон окна не закрашивается: сквозь панели видно рабочий стол и другие окна.
--->
-<Window
-    x:Class="Copmuter.Agent.MainWindow"
+<Window x:Class="Copmuter.Agent.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:conv="using:Copmuter.Agent.Converters"
     xmlns:models="using:Copmuter.Agent.Models"
-    Title="Copmuter — локальный автономный AI-агент">
-
-    <Grid x:Name="Root">
+    xmlns:conv="using:Copmuter.Agent.Converters" Title="Copmuter">
+    <Grid x:Name="Root" RequestedTheme="Dark" SizeChanged="OnRootSizeChanged">
         <Grid.Resources>
             <conv:MessageBrushConverter x:Key="MessageBrush" />
-            <conv:MessageEdgeConverter x:Key="MessageEdge" />
-            <conv:MessageCornerConverter x:Key="MessageCorner" />
             <conv:MessageAlignConverter x:Key="MessageAlign" />
-            <conv:BoolToVisibilityConverter x:Key="BoolToVisibility" />
-            <conv:InvertBoolConverter x:Key="InvertBool" />
         </Grid.Resources>
-
-        <!-- Подложка окна: лежит на акриле и гасит фон до читаемого уровня.
-             Opacity = 1 полностью убирает просвечивание (ползунок в параметрах). -->
-        <Border Grid.RowSpan="3" Grid.ColumnSpan="3" Background="{StaticResource ScrimBrush}"
-                Opacity="{x:Bind ViewModel.GlassOpacity, Mode=OneWay}" />
-
         <Grid.RowDefinitions>
-            <!-- 0: стеклянная шапка (она же область перетаскивания окна) -->
-            <RowDefinition Height="Auto" />
-            <!-- 1: рабочая область -->
+            <RowDefinition Height="52" />
             <RowDefinition Height="*" />
-            <!-- 2: строка состояния -->
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="36" />
         </Grid.RowDefinitions>
-        <Grid.ColumnDefinitions>
-            <!-- 0: рейл навигации -->
-            <ColumnDefinition Width="Auto" />
-            <!-- 1: чат -->
-            <ColumnDefinition Width="*" />
-            <!-- 2: параметры -->
-            <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
+        <Border Grid.RowSpan="3" Background="{StaticResource ScrimBrush}"
+                Opacity="{x:Bind ViewModel.GlassOpacity, Mode=OneWay}" IsHitTestVisible="False" />
 
-        <!-- ===================================================================== -->
-        <!-- 0. ШАПКА: бренд, режим модели, переключатели, кнопки окна             -->
-        <!-- ===================================================================== -->
-        <Grid Grid.Row="0" Grid.ColumnSpan="3" Height="54">
-            <Border Background="{StaticResource Pane3Brush}"
-                    BorderBrush="{StaticResource HairlineBrush}" BorderThickness="0,0,0,1" />
-
-            <!-- Область перетаскивания окна: лежит под элементами, клики по ним не съедает. -->
-            <Grid x:Name="TitleBarDragRegion" Background="Transparent" />
-
-            <Grid Padding="12,0,0,0" ColumnSpacing="10">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-
-                <!-- Бренд -->
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                    <Border Width="30" Height="30" CornerRadius="9" Background="{StaticResource AccentBrush}">
-                        <Grid>
-                            <FontIcon Glyph="&#xE7F4;" FontSize="14" Foreground="{StaticResource AccentInkBrush}"
-                                      HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            <Image x:Name="BrandLogo" Stretch="UniformToFill" />
-                        </Grid>
-                    </Border>
-                    <TextBlock Text="Copmuter" FontSize="15" FontWeight="SemiBold"
-                               Foreground="{StaticResource TextBrush}" VerticalAlignment="Center" />
-                    <Border Background="{StaticResource AccentSoftBrush}" BorderBrush="{StaticResource AccentEdgeBrush}"
-                            BorderThickness="1" CornerRadius="7" Padding="7,2" VerticalAlignment="Center">
-                        <TextBlock Text="PRO / LOCAL" FontSize="10.5" FontWeight="SemiBold"
-                                   Foreground="{StaticResource AccentBrush}" />
-                    </Border>
-                </StackPanel>
-
-                <!-- Состояние ядра и модели -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="9" VerticalAlignment="Center"
-                            HorizontalAlignment="Left" Margin="6,0,0,0">
-                    <Border Background="{StaticResource FillBrush}" BorderBrush="{StaticResource HairlineBrush}"
-                            BorderThickness="1" CornerRadius="11" Padding="10,4">
-                        <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
-                            <Ellipse Width="7" Height="7" Fill="{StaticResource OkBrush}" VerticalAlignment="Center" />
-                            <TextBlock Text="C++ ядро · Qwen3-VL" FontSize="11.5"
-                                       Foreground="{StaticResource DimBrush}" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
-
-                <!-- Режимы и кнопки окна -->
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                    <ToggleSwitch Header="" OnContent="PLAN ONLY" OffContent="PLAN ONLY"
-                                  IsOn="{x:Bind ViewModel.Settings.PlanOnly, Mode=TwoWay}"
-                                  FontSize="12" MinWidth="0" VerticalAlignment="Center" />
-                    <Border Width="1" Height="18" Background="{StaticResource HairlineBrush}" Margin="2,0" />
-                    <ToggleSwitch x:Name="SettingsToggle" Header="" OnContent="Параметры"
-                                  OffContent="Параметры" Toggled="OnSettingsToggled"
-                                  FontSize="12" MinWidth="0" VerticalAlignment="Center" />
-                    <!-- Место под системные кнопки окна (свернуть/развернуть/закрыть). -->
-                    <Border x:Name="CaptionSpacer" Width="140" Height="1" />
+        <!-- Only this region is draggable. No interactive controls inside it. -->
+        <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition x:Name="CaptionSpacer" Width="140" /></Grid.ColumnDefinitions>
+            <Grid x:Name="TitleBarDragRegion" Background="Transparent" Padding="24,0">
+                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <Image x:Name="BrandLogo" Width="22" Height="22" />
+                    <TextBlock Text="copmuter" FontSize="15" FontWeight="SemiBold" />
                 </StackPanel>
             </Grid>
         </Grid>
 
-        <!-- ===================================================================== -->
-        <!-- 1. РЕЙЛ НАВИГАЦИИ                                                     -->
-        <!-- ===================================================================== -->
-        <Border Grid.Row="1" Grid.Column="0" Width="54" Background="{StaticResource Pane2Brush}"
-                BorderBrush="{StaticResource HairlineBrush}" BorderThickness="0,0,1,0">
-            <StackPanel Padding="0,14" Spacing="10" HorizontalAlignment="Center">
-                <Button Style="{StaticResource RailButtonActiveStyle}" ToolTipService.ToolTip="Чат и задачи">
-                    <FontIcon Glyph="&#xE8BD;" FontSize="16" Foreground="{StaticResource AccentBrush}" />
-                </Button>
-                <Button Style="{StaticResource RailButtonStyle}" ToolTipService.ToolTip="Диагностика системы">
-                    <FontIcon Glyph="&#xE9D9;" FontSize="16" Foreground="{StaticResource DimBrush}" />
-                </Button>
-                <Button Style="{StaticResource RailButtonStyle}" ToolTipService.ToolTip="Центр конфиденциальности">
-                    <FontIcon Glyph="&#xE72E;" FontSize="16" Foreground="{StaticResource DimBrush}" />
-                </Button>
-                <Button Style="{StaticResource RailButtonStyle}" ToolTipService.ToolTip="Журнал действий и откат">
-                    <FontIcon Glyph="&#xE7A7;" FontSize="16" Foreground="{StaticResource DimBrush}" />
-                </Button>
-            </StackPanel>
-        </Border>
-
-        <!-- ===================================================================== -->
-        <!-- 2. ЧАТ                                                                -->
-        <!-- ===================================================================== -->
-        <Grid Grid.Row="1" Grid.Column="1" Padding="20,12,20,14"
-              Background="{StaticResource PaneBrush}">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
-
-            <!-- Приветствие: видно, пока в чате нет ни одного сообщения. -->
-            <StackPanel Grid.Row="0" Spacing="14" VerticalAlignment="Top" Margin="0,36,0,0"
-                        MaxWidth="620" HorizontalAlignment="Center"
-                        Visibility="{x:Bind ViewModel.WelcomeVisibility, Mode=OneWay}">
-                <TextBlock Text="Copmuter" FontSize="23" FontWeight="SemiBold"
-                           Foreground="{StaticResource TextBrush}" HorizontalAlignment="Center" />
-                <TextBlock Text="Скажите, что нужно получить, — агент сам решит, как это сделать на этом компьютере."
-                           FontSize="13.5" Foreground="{StaticResource DimBrush}" TextWrapping="Wrap"
-                           TextAlignment="Center" />
-                <Border Background="{StaticResource PaneBrush}" BorderBrush="{StaticResource HairlineBrush}"
-                        BorderThickness="1" CornerRadius="16" Padding="6">
-                    <StackPanel>
-                        <Button Click="OnSuggestionClick" Tag="открой телегу" HorizontalAlignment="Stretch"
-                                HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
-                                CornerRadius="11" Padding="14,11">
-                            <StackPanel Spacing="2">
-                                <TextBlock Text="Запустить приложение" FontSize="12.5" FontWeight="SemiBold"
-                                           Foreground="{StaticResource TextBrush}" />
-                                <TextBlock Text="открой телегу — реестр, кэш путей, Shell"
-                                           Style="{StaticResource HintStyle}" />
-                            </StackPanel>
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions><ColumnDefinition x:Name="SidebarColumn" Width="248" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+            <Border Background="{StaticResource SidebarBrush}" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="0,0,1,0">
+                <Grid Margin="12,16,12,12" RowSpacing="20">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                    <Button x:Name="NewChatButton" Click="OnNewChatClick" Style="{StaticResource NavButton}"
+                            Background="{StaticResource AccentSoftBrush}" AutomationProperties.AutomationId="NewChat"
+                            AutomationProperties.Name="Новая задача" ToolTipService.ToolTip="Новая задача · Ctrl+N">
+                        <StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE710;" FontSize="16" Foreground="{StaticResource AccentBrush}" /><TextBlock x:Name="NewChatLabel" Text="Новая задача" FontSize="14" /></StackPanel>
+                    </Button>
+                    <StackPanel Grid.Row="1" Spacing="4">
+                        <Button x:Name="ChatNav" Tag="Chat" Click="OnNavigate" Style="{StaticResource NavButton}" AutomationProperties.Name="Задачи" ToolTipService.ToolTip="Задачи">
+                            <StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE8F2;" FontSize="16" /><TextBlock x:Name="ChatNavLabel" Text="Задачи" FontSize="14" /></StackPanel>
                         </Button>
-                        <Button Click="OnSuggestionClick" Tag="найди видео про котиков" HorizontalAlignment="Stretch"
-                                HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
-                                CornerRadius="11" Padding="14,11">
-                            <StackPanel Spacing="2">
-                                <TextBlock Text="Найти в браузере" FontSize="12.5" FontWeight="SemiBold"
-                                           Foreground="{StaticResource TextBrush}" />
-                                <TextBlock Text="найди видео про котиков — прямая ссылка, без Playwright"
-                                           Style="{StaticResource HintStyle}" />
-                            </StackPanel>
+                        <Button x:Name="JournalNav" AutomationProperties.AutomationId="Journal" Tag="Journal" Click="OnNavigate" Style="{StaticResource NavButton}" AutomationProperties.Name="Журнал" ToolTipService.ToolTip="Журнал">
+                            <StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE81C;" FontSize="16" /><TextBlock x:Name="JournalNavLabel" Text="Журнал" FontSize="14" /></StackPanel>
                         </Button>
-                        <Button Click="OnSuggestionClick" Tag="напиши калькулятор на python" HorizontalAlignment="Stretch"
-                                HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0"
-                                CornerRadius="11" Padding="14,11">
-                            <StackPanel Spacing="2">
-                                <TextBlock Text="Задача для модели" FontSize="12.5" FontWeight="SemiBold"
-                                           Foreground="{StaticResource TextBrush}" />
-                                <TextBlock Text="напиши калькулятор на python — план, код, проверка"
-                                           Style="{StaticResource HintStyle}" />
-                            </StackPanel>
+                        <Button x:Name="DiagnosticsNav" AutomationProperties.AutomationId="Diagnostics" Tag="Diagnostics" Click="OnNavigate" Style="{StaticResource NavButton}" AutomationProperties.Name="Диагностика" ToolTipService.ToolTip="Диагностика">
+                            <StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE9D9;" FontSize="16" /><TextBlock x:Name="DiagnosticsNavLabel" Text="Диагностика" FontSize="14" /></StackPanel>
                         </Button>
                     </StackPanel>
-                </Border>
-            </StackPanel>
-
-            <!-- Сообщения: стеклянные пузыри, выравнивание по роли. -->
-            <ListView x:Name="ChatList" Grid.Row="0" ItemsSource="{x:Bind ViewModel.Messages}"
-                      SelectionMode="None" IsItemClickEnabled="False" Background="Transparent"
-                      Padding="0,0,0,8">
-                <ListView.ItemContainerStyle>
-                    <Style TargetType="ListViewItem">
-                        <Setter Property="Padding" Value="0" />
-                        <Setter Property="Margin" Value="0" />
-                        <Setter Property="MinHeight" Value="0" />
-                        <Setter Property="Background" Value="Transparent" />
-                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                    </Style>
-                </ListView.ItemContainerStyle>
-                <ListView.ItemTemplate>
-                    <DataTemplate x:DataType="models:ChatMessage">
-                        <Border Margin="0,5" Padding="14,11" MaxWidth="760"
-                                HorizontalAlignment="{Binding Role, Converter={StaticResource MessageAlign}}"
-                                Background="{Binding Role, Converter={StaticResource MessageBrush}}"
-                                BorderBrush="{Binding Role, Converter={StaticResource MessageEdge}}"
-                                BorderThickness="1"
-                                CornerRadius="{Binding Role, Converter={StaticResource MessageCorner}}">
-                            <StackPanel Spacing="4">
-                                <TextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="14"
-                                           Foreground="{StaticResource TextBrush}" LineHeight="21" />
-                                <TextBlock Text="{Binding Time}" FontSize="10"
-                                           Foreground="{StaticResource FaintBrush}" HorizontalAlignment="Right" />
-                            </StackPanel>
-                        </Border>
-                    </DataTemplate>
-                </ListView.ItemTemplate>
-            </ListView>
-
-            <!-- Композер -->
-            <StackPanel Grid.Row="1" Spacing="8">
-                <Border Background="{StaticResource Pane2Brush}" BorderBrush="{StaticResource HairlineBrush}"
-                        BorderThickness="1" CornerRadius="18" Padding="8,6">
-                    <Grid ColumnSpacing="8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-
-                        <TextBox x:Name="InputBox" Grid.Column="0"
-                                 PlaceholderText="Скажи, что сделать на компьютере (запустить, удалить, найти, написать код)…"
-                                 Text="{x:Bind ViewModel.Input, Mode=TwoWay}"
-                                 KeyDown="OnInputKeyDown"
-                                 BorderThickness="0" Background="Transparent"
-                                 Foreground="{StaticResource TextBrush}" FontSize="14" Padding="12,10" />
-
-                        <Button Grid.Column="1" Style="{StaticResource AccentPillButtonStyle}"
-                                Click="OnSendClick"
-                                IsEnabled="{x:Bind ViewModel.CanSend, Mode=OneWay}">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <FontIcon Glyph="&#xE724;" FontSize="13" />
-                                <TextBlock Text="Выполнить" />
-                            </StackPanel>
-                        </Button>
-
-                        <Button Grid.Column="2" Style="{StaticResource DangerPillButtonStyle}" Click="OnStopClick">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <FontIcon Glyph="&#xE71A;" FontSize="12" />
-                                <TextBlock Text="Стоп" />
-                            </StackPanel>
-                        </Button>
+                    <Grid x:Name="HistoryPanel" Grid.Row="2" RowSpacing="12">
+                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                        <TextBlock Text="НЕДАВНИЕ" Foreground="{StaticResource FaintBrush}" FontSize="11" CharacterSpacing="120" Margin="14,0" />
+                        <TextBox Grid.Row="1" PlaceholderText="Найти задачу" CornerRadius="9" FontSize="13" Margin="4,0"
+                                 AutomationProperties.Name="Поиск задач" Text="{x:Bind ViewModel.SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <ListView x:Name="ChatList" Grid.Row="2" ItemsSource="{x:Bind ViewModel.FilteredChats}"
+                                  SelectedItem="{x:Bind ViewModel.ActiveChat, Mode=TwoWay}" SelectionChanged="OnChatSelected"
+                                  SelectionMode="Single" Background="Transparent" BorderThickness="0">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="models:Chat">
+                                    <StackPanel Padding="0,9" Spacing="5">
+                                        <TextBlock Text="{x:Bind Title, Mode=OneWay}" FontSize="14" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                        <TextBlock Text="{x:Bind Subtitle, Mode=OneWay}" FontSize="12" Foreground="{StaticResource FaintBrush}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                        <TextBlock Grid.Row="2" Text="Ничего не найдено" FontSize="13" Margin="14,16" Foreground="{StaticResource FaintBrush}"
+                                   Visibility="{x:Bind ViewModel.EmptySearchVisibility, Mode=OneWay}" IsHitTestVisible="False" />
                     </Grid>
-                </Border>
-                <TextBlock HorizontalAlignment="Center"
-                           Text="Enter — выполнить · «Стоп» прерывает задачу · PLAN ONLY — только план, без действий"
-                           Style="{StaticResource HintStyle}" />
-            </StackPanel>
-        </Grid>
+                    <Button x:Name="SettingsNav" Grid.Row="3" Tag="Settings" Click="OnNavigate" Style="{StaticResource NavButton}"
+                            AutomationProperties.AutomationId="Settings" AutomationProperties.Name="Настройки" ToolTipService.ToolTip="Настройки">
+                        <StackPanel Orientation="Horizontal" Spacing="12"><FontIcon Glyph="&#xE713;" FontSize="16" /><TextBlock x:Name="SettingsNavLabel" Text="Настройки" FontSize="14" /></StackPanel>
+                    </Button>
+                </Grid>
+            </Border>
 
-        <!-- ===================================================================== -->
-        <!-- 3. ПАРАМЕТРЫ                                                          -->
-        <!-- ===================================================================== -->
-        <ScrollViewer Grid.Row="1" Grid.Column="2" Width="360" Background="{StaticResource Pane3Brush}"
-                      BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1,0,0,0" Padding="16,14"
-                      Visibility="{Binding IsOn, ElementName=SettingsToggle, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-            <StackPanel Spacing="14">
-                <TextBlock Text="Параметры агента" FontSize="15" FontWeight="SemiBold"
-                           Foreground="{StaticResource TextBrush}" />
-
-                <!-- Группа 1: модель и среда -->
-                <Border Style="{StaticResource CardBorderStyle}">
-                    <StackPanel Spacing="10">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Ellipse Width="6" Height="6" Fill="{StaticResource AccentBrush}" VerticalAlignment="Center" />
-                            <TextBlock Text="Модель и среда" Style="{StaticResource SectionTitleStyle}" />
+            <Grid Grid.Column="1" Margin="32,12,32,0" Visibility="{x:Bind ViewModel.ChatPanelVisibility, Mode=OneWay}">
+                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                <Grid ColumnSpacing="16" Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <TextBlock Text="{x:Bind ViewModel.ActiveChat.Title, Mode=OneWay}" Foreground="{StaticResource DimBrush}" FontSize="14" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Content="&#xE74D;" FontFamily="Segoe Fluent Icons" Background="Transparent" BorderThickness="0"
+                            Click="OnDeleteChatClick" ToolTipService.ToolTip="Удалить эту задачу" AutomationProperties.Name="Удалить задачу" />
+                </Grid>
+                <ScrollViewer x:Name="MessageScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl x:Name="MessageItems" ItemsSource="{x:Bind ViewModel.ActiveChat.Messages, Mode=OneWay}" MaxWidth="820" HorizontalAlignment="Stretch">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="models:ChatMessage">
+                                <Border Background="{Binding Role, Converter={StaticResource MessageBrush}}"
+                                        HorizontalAlignment="{Binding Role, Converter={StaticResource MessageAlign}}"
+                                        CornerRadius="16" Padding="22,18" Margin="0,8,0,12" MaxWidth="740">
+                                    <StackPanel Spacing="10">
+                                        <TextBlock Text="{x:Bind Speaker}" Foreground="{StaticResource DimBrush}" FontSize="12" FontWeight="SemiBold" />
+                                        <TextBlock Text="{x:Bind Text, Mode=OneWay}" TextWrapping="Wrap" FontSize="16" LineHeight="26" IsTextSelectionEnabled="True" />
+                                        <TextBlock Text="{x:Bind Time}" Foreground="{StaticResource FaintBrush}" FontSize="11" HorizontalAlignment="Right" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Visibility="{x:Bind ViewModel.WelcomeVisibility, Mode=OneWay}">
+                    <StackPanel MaxWidth="640" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,64,0,48" Spacing="24">
+                        <StackPanel Spacing="14">
+                            <TextBlock Text="ВАШ КОМПЬЮТЕР. ВАШИ ПРАВИЛА." FontSize="11" CharacterSpacing="140" Foreground="{StaticResource AccentBrush}" />
+                            <TextBlock Text="Меньше кликов.&#x0a;Больше сделанного." FontSize="40" FontWeight="SemiBold" LineHeight="48" TextWrapping="Wrap" />
+                            <TextBlock Text="Опишите задачу обычными словами.&#x0a;Copmuter выполнит её на этом компьютере." Style="{StaticResource Muted}" FontSize="16" LineHeight="26" />
                         </StackPanel>
-
-                        <TextBlock Text="Каталог состояния" Style="{StaticResource FieldLabelStyle}" />
-                        <TextBox Text="{x:Bind ViewModel.Settings.StateDir, Mode=TwoWay}" FontSize="12" />
-
-                        <TextBlock Text="Канал IPC (Named Pipe / Socket)" Style="{StaticResource FieldLabelStyle}" />
-                        <TextBox Text="{x:Bind ViewModel.Settings.SocketPath, Mode=TwoWay}" FontSize="12" />
-
-                        <TextBlock Text="Путь к Python" Style="{StaticResource FieldLabelStyle}" />
-                        <TextBox Text="{x:Bind ViewModel.Settings.PythonPath, Mode=TwoWay}" FontSize="12" />
-
-                        <TextBlock Text="Корень репозитория" Style="{StaticResource FieldLabelStyle}" />
-                        <TextBox Text="{x:Bind ViewModel.Settings.RepoRoot, Mode=TwoWay}" FontSize="12" />
-                    </StackPanel>
-                </Border>
-
-                <!-- Группа 2: безопасность -->
-                <Border Style="{StaticResource CardBorderStyle}">
-                    <StackPanel Spacing="10">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Ellipse Width="6" Height="6" Fill="{StaticResource OkBrush}" VerticalAlignment="Center" />
-                            <TextBlock Text="Безопасность и подтверждения" Style="{StaticResource SectionTitleStyle}" />
+                        <StackPanel Spacing="8" Margin="0,12,0,0">
+                            <Button Click="OnSuggestionClick" Tag="Открой Telegram" Style="{StaticResource QuietButton}" Content="Открыть Telegram    ↗" HorizontalAlignment="Left" />
+                            <Button Click="OnSuggestionClick" Tag="Создай папку Проекты на рабочем столе" Style="{StaticResource QuietButton}" Content="Создать папку на рабочем столе    ↗" HorizontalAlignment="Left" />
                         </StackPanel>
-
-                        <TextBlock Text="Режим выполнения" Style="{StaticResource FieldLabelStyle}" />
-                        <ComboBox SelectedValue="{x:Bind ViewModel.Settings.SafetyMode, Mode=TwoWay}"
-                                  SelectedValuePath="Tag" HorizontalAlignment="Stretch" FontSize="12">
-                            <ComboBoxItem Content="Авто (опасное — с подтверждением)" Tag="auto" />
-                            <ComboBoxItem Content="Подтверждать все действия" Tag="confirm" />
-                            <ComboBoxItem Content="Полный доступ (без вопросов)" Tag="full" />
-                            <ComboBoxItem Content="Пошаговый режим" Tag="step" />
-                            <ComboBoxItem Content="Только план (без действий)" Tag="plan_only" />
-                        </ComboBox>
-
-                        <TextBlock Text="Браузер по умолчанию" Style="{StaticResource FieldLabelStyle}" />
-                        <TextBox Text="{x:Bind ViewModel.Settings.DefaultBrowser, Mode=TwoWay}" FontSize="12" />
-
-                        <ToggleSwitch Header="Предзагрузка при запуске" FontSize="12"
-                                      IsOn="{x:Bind ViewModel.Settings.Preload, Mode=TwoWay}" />
+                        <TextBlock Text="Подсказка только заполнит поле. Вы решаете, когда начать." FontSize="12" Foreground="{StaticResource FaintBrush}" TextWrapping="Wrap" />
                     </StackPanel>
-                </Border>
-
-                <!-- Группа: окно и стекло -->
-                <Border Style="{StaticResource CardBorderStyle}">
-                    <StackPanel Spacing="8">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Ellipse Width="6" Height="6" Fill="{StaticResource AccentBrush}" VerticalAlignment="Center" />
-                            <TextBlock Text="Окно и стекло" Style="{StaticResource SectionTitleStyle}" />
+                </ScrollViewer>
+                <StackPanel Grid.Row="2" MaxWidth="820" HorizontalAlignment="Stretch" Margin="0,16,0,12" Spacing="10">
+                    <Border Background="{StaticResource SurfaceBrush}" CornerRadius="18" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" Padding="16">
+                        <StackPanel Spacing="14">
+                            <TextBox x:Name="InputBox" Text="{x:Bind ViewModel.Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     KeyDown="OnInputKeyDown" PlaceholderText="Что нужно сделать?" AcceptsReturn="True" TextWrapping="Wrap"
+                                     MinHeight="48" MaxHeight="160" FontSize="16" Background="Transparent" BorderThickness="0" Padding="2,4"
+                                     AutomationProperties.AutomationId="TaskInput" AutomationProperties.Name="Текст задачи" />
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <CheckBox AutomationProperties.AutomationId="PlanOnly" Content="Только план" IsChecked="{x:Bind ViewModel.Settings.PlanOnly, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" FontSize="13"
+                                          ToolTipService.ToolTip="Показать план без выполнения действий" />
+                                <Button Grid.Column="1" Click="OnStopClick" IsEnabled="{x:Bind ViewModel.CanStop, Mode=OneWay}" Style="{StaticResource QuietButton}" Content="Стоп" AutomationProperties.AutomationId="Stop" />
+                                <Button Grid.Column="2" Click="OnSendClick" IsEnabled="{x:Bind ViewModel.CanSend, Mode=OneWay}" Style="{StaticResource PrimaryButton}" Content="Выполнить  ↑" AutomationProperties.AutomationId="Send" />
+                            </Grid>
                         </StackPanel>
-
-                        <TextBlock Text="Плотность подложки" Style="{StaticResource FieldLabelStyle}" />
-                        <Slider Minimum="0.35" Maximum="1" StepFrequency="0.05"
-                                Value="{x:Bind ViewModel.GlassOpacity, Mode=TwoWay}" />
-                        <TextBlock Text="0.35 — фон просвечивает сильнее · 1.0 — окно полностью тёмное"
-                                   Style="{StaticResource HintStyle}" />
-                    </StackPanel>
-                </Border>
-
-                <!-- Группа 3: таймауты -->
-                <Border Style="{StaticResource CardBorderStyle}">
-                    <StackPanel Spacing="10">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Ellipse Width="6" Height="6" Fill="{StaticResource WarnBrush}" VerticalAlignment="Center" />
-                            <TextBlock Text="Таймауты и устойчивость" Style="{StaticResource SectionTitleStyle}" />
-                        </StackPanel>
-
-                        <TextBlock Text="Таймаут запуска, мс" Style="{StaticResource FieldLabelStyle}" />
-                        <NumberBox Value="{x:Bind ViewModel.Settings.LaunchTimeoutMs, Mode=TwoWay}"
-                                   SpinButtonPlacementMode="Compact" />
-
-                        <TextBlock Text="Таймаут зрения, мс" Style="{StaticResource FieldLabelStyle}" />
-                        <NumberBox Value="{x:Bind ViewModel.Settings.VisionTimeoutMs, Mode=TwoWay}"
-                                   SpinButtonPlacementMode="Compact" />
-
-                        <TextBlock Text="Число повторов при сбое" Style="{StaticResource FieldLabelStyle}" />
-                        <NumberBox Value="{x:Bind ViewModel.Settings.MaxRetries, Mode=TwoWay}"
-                                   SpinButtonPlacementMode="Compact" />
-                    </StackPanel>
-                </Border>
-
-                <!-- Группа 4: метрики -->
-                <Border Style="{StaticResource CardBorderStyle}">
-                    <StackPanel Spacing="8">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Ellipse Width="6" Height="6" Fill="{StaticResource AccentBrush}" VerticalAlignment="Center" />
-                            <TextBlock Text="Метрики и задержки (TTC)" Style="{StaticResource SectionTitleStyle}" />
-                        </StackPanel>
-                        <TextBlock Text="{x:Bind ViewModel.Metrics, Mode=OneWay}" TextWrapping="Wrap"
-                                   FontFamily="{StaticResource MonoFont}" FontSize="11"
-                                   Foreground="{StaticResource DimBrush}" />
-                    </StackPanel>
-                </Border>
-            </StackPanel>
-        </ScrollViewer>
-
-        <!-- ===================================================================== -->
-        <!-- 4. СТРОКА СОСТОЯНИЯ                                                   -->
-        <!-- ===================================================================== -->
-        <Border Grid.Row="2" Grid.ColumnSpan="3" Background="{StaticResource Pane3Brush}"
-                BorderBrush="{StaticResource HairlineBrush}" BorderThickness="0,1,0,0" Padding="16,7">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                    <ProgressRing IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" Width="14" Height="14"
-                                  Foreground="{StaticResource AccentBrush}" />
-                    <TextBlock Text="{x:Bind ViewModel.Status, Mode=OneWay}" FontSize="12.5"
-                               Foreground="{StaticResource DimBrush}" VerticalAlignment="Center"
-                               TextTrimming="CharacterEllipsis" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                    <TextBlock Text="Direct: ~11 µs" FontSize="11" Foreground="{StaticResource DimBrush}" />
-                    <!-- Отпечаток сборки: видно, какой именно коммит запущен. -->
-                    <Border Background="{StaticResource AccentSoftBrush}" CornerRadius="6" Padding="6,1">
-                        <TextBlock x:Name="BuildStamp" Text="сборка разработчика" FontSize="10.5"
-                                   FontFamily="{StaticResource MonoFont}"
-                                   Foreground="{StaticResource AccentBrush}" />
                     </Border>
-                    <TextBlock Text="● На связи" FontSize="11" Foreground="{StaticResource OkBrush}" />
+                    <TextBlock Text="Enter — выполнить · Shift+Enter — новая строка" FontSize="12" Foreground="{StaticResource FaintBrush}" HorizontalAlignment="Center" />
                 </StackPanel>
             </Grid>
-        </Border>
+
+            <ScrollViewer Grid.Column="1" Visibility="{x:Bind ViewModel.SettingsPanelVisibility, Mode=OneWay}">
+                <StackPanel MaxWidth="720" Margin="32,28,32,40" Spacing="24">
+                    <TextBlock Text="Настройки" Style="{StaticResource PageTitle}" />
+                    <TextBlock Text="Соединение, безопасность и внешний вид. Изменения подключения применяются кнопкой внизу." Style="{StaticResource Muted}" />
+                    <Border Style="{StaticResource SettingsGroup}">
+                        <StackPanel Spacing="18" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}">
+                            <TextBlock Text="Подключение к модели" FontSize="18" FontWeight="SemiBold" />
+                            <TextBox Header="Адрес API" Text="{x:Bind ViewModel.Settings.ModelEndpoint, Mode=TwoWay}" CornerRadius="8" />
+                            <TextBox Header="Идентификатор модели" Text="{x:Bind ViewModel.Settings.VisionModel, Mode=TwoWay}" CornerRadius="8" />
+                            <Grid ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <StackPanel Spacing="5"><TextBlock Text="{x:Bind ViewModel.ModelTitle, Mode=OneWay}" TextWrapping="Wrap" /><TextBlock Text="{x:Bind ViewModel.ModelDetail, Mode=OneWay}" Style="{StaticResource Muted}" FontSize="12" /></StackPanel>
+                                <Button Grid.Column="1" Click="OnCheckModelClick" Content="Проверить" Style="{StaticResource QuietButton}" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource SettingsGroup}">
+                        <StackPanel Spacing="18" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}">
+                            <TextBlock Text="Безопасность" FontSize="18" FontWeight="SemiBold" />
+                            <ComboBox x:Name="SafetyModeBox" Header="Режим выполнения" HorizontalAlignment="Stretch" SelectionChanged="OnSafetyModeChanged">
+                                <ComboBoxItem Content="Авто — опасные действия с подтверждением" Tag="auto" />
+                                <ComboBoxItem Content="Подтверждать изменения" Tag="confirm" />
+                                <ComboBoxItem Content="Только план — без выполнения" Tag="plan_only" />
+                            </ComboBox>
+                            <TextBlock Text="Отказ или закрытие диалога не разрешают действие. «Стоп» запрашивает отмену; уже завершённые действия не откатываются." Style="{StaticResource Muted}" />
+                            <ToggleSwitch Header="Журнал отладки ядра" IsOn="{x:Bind ViewModel.Settings.DebugLog, Mode=TwoWay}" OnContent="Записывать" OffContent="Не записывать" />
+                            <TextBlock Text="Журнал и история сохраняются локально. Журнал может содержать тексты задач и пути к файлам." Style="{StaticResource Muted}" FontSize="12" />
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource SettingsGroup}">
+                        <StackPanel Spacing="14">
+                            <TextBlock Text="Тёмное стекло" FontSize="18" FontWeight="SemiBold" />
+                            <Slider AutomationProperties.AutomationId="GlassDensity" Header="Плотность подложки" Minimum="0.35" Maximum="1" StepFrequency="0.01" Value="{x:Bind ViewModel.GlassOpacity, Mode=TwoWay}" />
+                            <TextBlock Text="Меньше — фон заметнее. Больше — выше контраст. Прозрачность рабочего стола доступна, если Windows поддерживает акрил и эффекты прозрачности включены." Style="{StaticResource Muted}" />
+                        </StackPanel>
+                    </Border>
+                    <Button Content="Сохранить и применить" Click="OnApplySettingsClick" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" Style="{StaticResource PrimaryButton}" />
+                </StackPanel>
+            </ScrollViewer>
+
+            <ScrollViewer Grid.Column="1" Visibility="{x:Bind ViewModel.DiagnosticsPanelVisibility, Mode=OneWay}">
+                <StackPanel Margin="32,28,32,40" Spacing="24" MaxWidth="820">
+                    <TextBlock Text="Диагностика" Style="{StaticResource PageTitle}" />
+                    <TextBlock Text="Фактические данные ядра. Во время выполнения обновление недоступно, чтобы не мешать задаче." Style="{StaticResource Muted}" />
+                    <Button AutomationProperties.AutomationId="RefreshDiagnostics" Content="Обновить данные" Click="OnRefreshDiagnosticsClick" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" Style="{StaticResource QuietButton}" />
+                    <TextBlock Text="Метрики" FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock Text="{x:Bind ViewModel.Metrics, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" FontSize="13" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    <TextBlock Text="Доступные инструменты" FontSize="18" FontWeight="SemiBold" />
+                    <TextBlock Text="{x:Bind ViewModel.Tools, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" FontSize="13" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                </StackPanel>
+            </ScrollViewer>
+            <Grid Grid.Column="1" Margin="32,28,32,24" RowSpacing="24" Visibility="{x:Bind ViewModel.JournalPanelVisibility, Mode=OneWay}">
+                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                <TextBlock Text="Журнал" Style="{StaticResource PageTitle}" />
+                <StackPanel Grid.Row="1" Spacing="16">
+                    <TextBlock Text="Последние 100 строк журнала ядра. Запись включается в настройках." Style="{StaticResource Muted}" />
+                    <StackPanel Orientation="Horizontal" Spacing="12"><Button AutomationProperties.AutomationId="RefreshJournal" Content="Обновить" Click="OnRefreshJournalClick" Style="{StaticResource QuietButton}" /><Button Content="Открыть папку" Click="OnOpenStateFolderClick" Style="{StaticResource QuietButton}" /></StackPanel>
+                </StackPanel>
+                <ScrollViewer Grid.Row="2"><TextBlock Text="{x:Bind ViewModel.Journal, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" FontSize="13" TextWrapping="Wrap" IsTextSelectionEnabled="True" /></ScrollViewer>
+            </Grid>
+        </Grid>
+        <Grid Grid.Row="2" Margin="24,0" ColumnSpacing="16">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <TextBlock Text="{x:Bind ViewModel.Status, Mode=OneWay}" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource DimBrush}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind ViewModel.Status, Mode=OneWay}" />
+            <Ellipse Grid.Column="1" Width="6" Height="6" Fill="{x:Bind ViewModel.ModelDotBrush, Mode=OneWay}" ToolTipService.ToolTip="{x:Bind ViewModel.ModelTitle, Mode=OneWay}" />
+            <TextBlock x:Name="BuildStamp" Grid.Column="2" VerticalAlignment="Center" FontSize="11" Foreground="{StaticResource FaintBrush}" />
+        </Grid>
     </Grid>
 </Window>

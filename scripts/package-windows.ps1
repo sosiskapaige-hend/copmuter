@@ -60,6 +60,9 @@ try {
         $_.ParentProcessId -eq $app.Id -and $_.Name -eq 'python.exe' -and $_.ExecutablePath -eq "$unpacked\python\python.exe"
     }
     if (!$worker) { throw 'Desktop did not start the bundled AI worker' }
+    & powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File scripts/test-shell-ui.ps1 `
+        -AppProcessId $app.Id -OutputDirectory (Join-Path $PWD 'artifacts/ui-smoke')
+    if ($LASTEXITCODE -ne 0) { throw 'WinUI interaction smoke test failed' }
 } catch {
     # Preserve actionable diagnostics in annotations as well as runner logs.
     $events = Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = (Get-Date).AddMinutes(-2) } -ErrorAction SilentlyContinue |

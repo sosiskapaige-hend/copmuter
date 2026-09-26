@@ -12,8 +12,8 @@ namespace Copmuter.Agent.Converters;
 
 public sealed class MessageBrushConverter : IValueConverter
 {
-    private static readonly SolidColorBrush User = new(Windows.UI.Color.FromArgb(0x33, 0x35, 0xDF, 0xCC));
-    private static readonly SolidColorBrush Agent = new(Windows.UI.Color.FromArgb(0xD9, 0x0D, 0x1E, 0x25));
+    private static readonly SolidColorBrush User = new(Windows.UI.Color.FromArgb(0x22, 0x63, 0xDA, 0xC8));
+    private static readonly SolidColorBrush Agent = new(Windows.UI.Color.FromArgb(0x80, 0x12, 0x25, 0x2A));
     private static readonly SolidColorBrush Status = new(Windows.UI.Color.FromArgb(0x0A, 0xFF, 0xFF, 0xFF));
     private static readonly SolidColorBrush Error = new(Windows.UI.Color.FromArgb(0x1F, 0xFF, 0x7A, 0x8A));
 

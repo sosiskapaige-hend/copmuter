@@ -8,6 +8,7 @@
 #include <string>
 
 #include "agent/platform.h"
+#include "agent/util.h"
 #define AGENT_RUNTIME_EXPORTS
 #include "agent/runtime.h"
 
@@ -20,6 +21,9 @@
 namespace {
 
 std::mutex g_mu;
+// Control calls must not wait for an executing command or confirmation.
+// Init/shutdown take g_mu then g_control_mu; controls only take g_control_mu.
+std::mutex g_control_mu;
 agent::AgentRuntime* g_runtime = nullptr;
 std::atomic<bool> g_cancel{false};   // «Стоп» из UI: виден исполнителю между шагами
 std::string g_last_error;
@@ -29,21 +33,7 @@ void* g_sink_user = nullptr;
 // Плоский JSON-конфиг: {"state_dir":"…","safety_mode":"auto","preload":true,…}.
 // Полноценный парсер здесь не нужен — ключи известны и не вложены.
 std::string json_string(const std::string& json, const std::string& key, const std::string& def = {}) {
-    const std::string pattern = "\"" + key + "\"";
-    size_t pos = json.find(pattern);
-    if (pos == std::string::npos) return def;
-    pos = json.find(':', pos + pattern.size());
-    if (pos == std::string::npos) return def;
-    ++pos;
-    while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t')) ++pos;
-    if (pos >= json.size()) return def;
-    if (json[pos] == '"') {
-        const size_t end = json.find('"', pos + 1);
-        if (end == std::string::npos) return def;
-        return json.substr(pos + 1, end - pos - 1);
-    }
-    const size_t end = json.find_first_of(",}\n", pos);
-    return json.substr(pos, end == std::string::npos ? std::string::npos : end - pos);
+    return agent::json_get_str(json, key, def);
 }
 
 bool json_bool(const std::string& json, const std::string& key, bool def) {
@@ -99,6 +89,7 @@ agent::RuntimeConfig parse_config(const std::string& json) {
 
 AGENT_EXPORT int32_t agent_init(const char* config_json) {
     std::lock_guard<std::mutex> lock(g_mu);
+    std::lock_guard<std::mutex> lifetime(g_control_mu);
     if (g_runtime) return 0;   // уже запущен: рантайм живёт всё время работы приложения
     const std::string json = config_json ? config_json : "{}";
     const agent::RuntimeConfig cfg = parse_config(json);
@@ -130,6 +121,7 @@ AGENT_EXPORT int32_t agent_init(const char* config_json) {
 
 AGENT_EXPORT void agent_shutdown() {
     std::lock_guard<std::mutex> lock(g_mu);
+    std::lock_guard<std::mutex> lifetime(g_control_mu);
     if (!g_runtime) return;
     g_runtime->stop();
     delete g_runtime;
@@ -232,7 +224,7 @@ AGENT_EXPORT void agent_set_event_sink(void (*fn)(const char*, void*), void* use
 }
 
 AGENT_EXPORT void agent_answer_confirmation(int32_t approved) {
-    std::lock_guard<std::mutex> lock(g_mu);
+    std::lock_guard<std::mutex> lock(g_control_mu);
     if (g_runtime) g_runtime->answer_confirmation(approved != 0);
 }
 
@@ -242,9 +234,10 @@ AGENT_EXPORT void agent_set_confirm_timeout(int32_t timeout_ms) {
 }
 
 AGENT_EXPORT void agent_cancel_current() {
-    std::lock_guard<std::mutex> lock(g_mu);
+    std::lock_guard<std::mutex> lock(g_control_mu);
     if (!g_runtime) return;
     // «Стоп» должен прерывать работу на уровне исполнителя, а не UI (ТЗ §33).
     g_cancel.store(true);
     g_runtime->queue().cancel();
+    g_runtime->answer_confirmation(false);
 }
