@@ -1,0 +1,6182 @@
+# MASTER PROMPT — TRANSFORM THE EXISTING AI COMPUTER AGENT INTO A PRODUCTION-GRADE COMMERCIAL DESKTOP PRODUCT
+
+## 0. ТВОЯ ЗАДАЧА
+
+Ты работаешь над существующим проектом **AI Computer Agent**.
+
+Это НЕ новый проект с нуля и НЕ небольшое приложение.
+
+Существующий код — это ранний прототип с большим количеством уже реализованной функциональности, но с серьёзными архитектурными, производительными, UX, AI, security и reliability проблемами.
+
+Твоя задача:
+
+> **Превратить существующий прототип в полноценный коммерческий desktop-продукт production-grade качества.**
+
+Итоговый продукт должен ощущаться не как Python-проект, не как эксперимент и не как AI-generated dashboard, а как приложение, которое потенциально можно продавать миллионам пользователей.
+
+Текущая реализация является лишь исходным материалом.
+
+**Не защищай существующую архитектуру.**
+
+Если архитектура плохая — перепиши её.
+
+Если язык не подходит — замени.
+
+Если библиотека плохая — замени.
+
+Если subsystem проще и быстрее реализовать нативно — реализуй нативно.
+
+Если функциональность проще сделать deterministic code — не используй LLM.
+
+Если существующий код мешает качеству — удаляй его.
+
+Главный объект оптимизации:
+
+> **не текущий код, а конечный продукт.**
+
+---
+
+# 1. ИСХОДНЫЙ ПРОДУКТ
+
+Концепция приложения:
+
+Пользователь говорит агенту, **какой результат хочет получить**, а агент самостоятельно:
+
+1. понимает цель;
+2. определяет необходимые действия;
+3. строит план;
+4. выбирает инструменты;
+5. выполняет действия;
+6. наблюдает результаты;
+7. проверяет, достигнута ли цель;
+8. исправляет ошибки;
+9. меняет стратегию при необходимости;
+10. завершает задачу только после фактической проверки результата.
+
+Компьютер является единой средой выполнения:
+
+* файловая система;
+* процессы;
+* окна;
+* приложения;
+* браузер;
+* терминал;
+* PowerShell;
+* экран;
+* мышь;
+* клавиатура;
+* clipboard;
+* ОС;
+* Git;
+* сеть;
+* настройки;
+* AI models;
+* voice;
+* память;
+* расписание;
+* фоновые задачи.
+
+Уже существующий проект содержит значительную часть этой функциональности.
+
+**Не потеряй её при рефакторинге.**
+
+---
+
+# 2. ПРИНЦИП №1 — НЕ ДЕЛАЙ "AI WRAPPER"
+
+Приложение не должно быть:
+
+```text
+User
+ ↓
+LLM
+ ↓
+Tool
+ ↓
+LLM
+ ↓
+Tool
+```
+
+для каждой операции.
+
+Это медленно, дорого и архитектурно неправильно.
+
+Приложение должно быть **hybrid intelligent execution system**:
+
+```text
+                  USER GOAL
+                      │
+                      ▼
+              Intent Understanding
+                      │
+                      ▼
+               Strategy Router
+                      │
+        ┌─────────────┼──────────────┐
+        │             │              │
+        ▼             ▼              ▼
+ Deterministic    Native OS       AI Reasoning
+ execution         execution          │
+        │             │               │
+        │             │        ┌──────┴──────┐
+        │             │        │             │
+        │             │       LLM         Vision
+        │             │        │             │
+        └─────────────┴────────┴─────────────┘
+                      │
+                      ▼
+                  Execution
+                      │
+                      ▼
+                 Observation
+                      │
+                      ▼
+                 Verification
+                      │
+                      ▼
+               Result / Replan
+```
+
+---
+
+# 3. АГЕНТ ДОЛЖЕН САМОСТОЯТЕЛЬНО ВЫБИРАТЬ СПОСОБ РЕШЕНИЯ
+
+Это обязательное требование.
+
+Пользователь задаёт **цель**, а не implementation plan.
+
+Например:
+
+> "Открой Chrome"
+
+Агент НЕ должен:
+
+```text
+LLM request
+→ tool selection
+→ generated PowerShell
+→ PowerShell
+```
+
+если можно сделать:
+
+```text
+native Windows Shell API
+→ Chrome
+```
+
+почти мгновенно.
+
+Другие примеры:
+
+### Создать директорию
+
+Filesystem API.
+
+### Найти процесс
+
+Native OS API.
+
+### Получить размер папки
+
+Filesystem/native API.
+
+### Открыть URL
+
+Native shell/browser API.
+
+### Запустить программу
+
+Native process launch.
+
+### Найти текст в файлах
+
+Fast filesystem/search engine.
+
+### Выполнить сложный shell workflow
+
+PowerShell / CLI.
+
+### Управлять браузером
+
+Playwright/browser automation.
+
+### Найти кнопку в неизвестном UI
+
+Accessibility tree → OCR → Vision как fallback.
+
+### Понять неоднозначную пользовательскую задачу
+
+LLM.
+
+---
+
+# 4. АГЕНТ ИМЕЕТ ПРАВО НЕ СЛЕДОВАТЬ ПОЛЬЗОВАТЕЛЬСКОМУ СПОСОБУ
+
+Если пользователь говорит:
+
+> "Сделай X через Y"
+
+агент должен оценить, действительно ли Y является оптимальным способом.
+
+Если существует существенно более быстрый/надёжный способ — агент может использовать его.
+
+Если пользователь говорит:
+
+> "Открой Chrome через PowerShell"
+
+а native API быстрее и безопаснее, агент может использовать native API, если нет причины строго соблюдать PowerShell.
+
+При необходимости агент может объяснить:
+
+> "Я использовал системный API вместо PowerShell, потому что это быстрее и надёжнее."
+
+---
+
+# 5. АГЕНТ МОЖЕТ ПРИНИМАТЬ НОВЫЕ РЕШЕНИЯ САМОСТОЯТЕЛЬНО
+
+Не ограничивай implementation решениями, перечисленными в этом prompt.
+
+Если во время разработки ты обнаружишь:
+
+* более современную технологию;
+* более производительную библиотеку;
+* более безопасный API;
+* лучший UI framework;
+* лучший способ взаимодействия с Windows;
+* более эффективную архитектуру;
+* лучший способ реализации agent loop;
+
+ты имеешь право использовать его.
+
+**Не нужно спрашивать разрешение на очевидные инженерные улучшения.**
+
+Prompt задаёт требования к продукту, а не полный список допустимых технологий.
+
+---
+
+# 6. ТЕХНОЛОГИЧЕСКАЯ СТРАТЕГИЯ
+
+## Не считать Python обязательным.
+
+Текущий Python-код существует потому, что это был прототип.
+
+Это НЕ означает, что production-продукт должен остаться Python-приложением.
+
+Проведи анализ каждого слоя:
+
+### Desktop shell
+
+Оцени native Windows / Rust / C++ / C# / Qt / Tauri / WebView / другие подходы.
+
+### Agent runtime
+
+Оцени Rust / C++ / Python / hybrid architecture.
+
+### UI
+
+Оцени современные desktop UI технологии.
+
+### OS integration
+
+Предпочитай native APIs.
+
+### AI providers
+
+Используй отдельный abstraction layer.
+
+### Browser
+
+Используй зрелый browser automation engine.
+
+### Storage
+
+Используй подходящее локальное хранилище, а не хаотичный набор JSON-файлов.
+
+### IPC
+
+Используй нормальный IPC между компонентами, если архитектура multi-process.
+
+---
+
+# 7. НЕ ПЕРЕПИСЫВАЙ ВСЁ В ОДИН ЯЗЫК
+
+Не нужно фанатично делать:
+
+```text
+100% Rust
+```
+
+или:
+
+```text
+100% C++
+```
+
+только ради архитектурной красоты.
+
+Используй **best tool for each job**.
+
+Возможная архитектура:
+
+```text
+┌─────────────────────────────────────┐
+│           Desktop Application       │
+├─────────────────────────────────────┤
+│ UI / Presentation                   │
+├─────────────────────────────────────┤
+│ Application Runtime                 │
+├─────────────────────────────────────┤
+│ Agent Orchestrator                  │
+├─────────────────────────────────────┤
+│ Tool Execution Layer                │
+├─────────────────────────────────────┤
+│ Native OS Integration               │
+├─────────────────────────────────────┤
+│ AI Provider Layer                   │
+├─────────────────────────────────────┤
+│ Storage / Memory / Tasks            │
+└─────────────────────────────────────┘
+```
+
+Конкретный stack выбери после анализа.
+
+---
+
+# 8. PERFORMANCE — ПЕРВООЧЕРЕДНОЕ ТРЕБОВАНИЕ
+
+Приложение должно быть **быстрым субъективно и объективно**.
+
+Нельзя допускать:
+
+* UI freeze;
+* unnecessary LLM calls;
+* repeated initialization;
+* повторного запуска browser;
+* повторного создания соединений;
+* лишних screenshot captures;
+* блокирующих операций;
+* synchronous network calls в UI thread;
+* загрузки всех тяжёлых зависимостей на startup.
+
+---
+
+# 9. PERFORMANCE BUDGETS
+
+Введи performance budgets.
+
+Измеряй:
+
+* startup;
+* first usable UI;
+* first interaction;
+* tool latency;
+* IPC latency;
+* filesystem latency;
+* process launch latency;
+* screenshot latency;
+* OCR latency;
+* browser action latency;
+* model request latency;
+* memory;
+* CPU;
+* background CPU;
+* idle memory.
+
+Для deterministic actions цель:
+
+> **минимальная возможная latency без участия LLM.**
+
+Для AI:
+
+> минимизировать количество model round-trips.
+
+---
+
+# 10. STARTUP
+
+Приложение не должно загружать всё на старте.
+
+Использовать:
+
+* lazy initialization;
+* lazy imports;
+* background initialization;
+* service startup;
+* caching;
+* persistent browser process;
+* connection reuse.
+
+UI должен стать доступным как можно быстрее.
+
+Тяжёлые компоненты загружать только при необходимости:
+
+```text
+Vision
+OCR
+Browser
+STT
+TTS
+LLM provider
+```
+
+---
+
+# 11. UI THREAD / MAIN THREAD
+
+UI никогда не должен блокироваться:
+
+* LLM request;
+* filesystem scan;
+* browser operation;
+* screenshot;
+* OCR;
+* TTS;
+* STT;
+* process scanning;
+* large file operation;
+* archive operation.
+
+Использовать:
+
+* async;
+* worker threads;
+* worker processes;
+* task scheduler;
+* IPC;
+
+там, где это необходимо.
+
+---
+
+# 12. EVENT-DRIVEN ARCHITECTURE
+
+Создай центральную event system.
+
+Например:
+
+```text
+TaskCreated
+TaskStarted
+PlanningStarted
+PlanningFinished
+
+ToolStarted
+ToolProgress
+ToolFinished
+ToolFailed
+
+ModelRequestStarted
+ModelToken
+ModelRequestFinished
+
+ScreenCaptured
+VisionStarted
+VisionFinished
+
+VerificationStarted
+VerificationFinished
+
+TaskPaused
+TaskResumed
+TaskCancelled
+TaskCompleted
+TaskFailed
+```
+
+UI подписывается на events.
+
+Agent runtime не должен зависеть от UI.
+
+---
+
+# 13. AGENT CORE
+
+Agent Core должен быть отдельным subsystem.
+
+Основной pipeline:
+
+```text
+Goal
+ ↓
+Context acquisition
+ ↓
+Intent resolution
+ ↓
+Task classification
+ ↓
+Strategy selection
+ ↓
+Plan
+ ↓
+Execution
+ ↓
+Observation
+ ↓
+Verification
+ ↓
+Continue / Replan / Complete
+```
+
+---
+
+# 14. TASK CLASSIFICATION
+
+Перед использованием LLM определяй:
+
+* deterministic;
+* semi-deterministic;
+* reasoning;
+* visual;
+* browser;
+* system;
+* destructive;
+* multi-step.
+
+Например:
+
+```text
+"Открой Discord"
+→ deterministic
+
+"Покажи процессы, которые жрут больше всего RAM"
+→ deterministic
+
+"Почему компьютер тормозит?"
+→ system diagnostics + reasoning
+
+"Найди нужную кнопку на сайте"
+→ browser/accessibility/vision
+
+"Разберись почему приложение падает"
+→ reasoning + logs + filesystem + process analysis
+```
+
+---
+
+# 15. TOOL REGISTRY
+
+Все инструменты должны иметь formal schema.
+
+Каждый tool:
+
+```text
+name
+description
+input schema
+output schema
+risk
+permissions
+capabilities
+platforms
+latency characteristics
+reversibility
+idempotency
+```
+
+Например:
+
+```text
+open_application
+
+risk: low
+platform: windows
+reversible: yes
+deterministic: yes
+requires_llm: no
+```
+
+---
+
+# 16. TOOL ROUTING
+
+Агент должен выбирать tool на основе:
+
+* correctness;
+* latency;
+* reliability;
+* risk;
+* availability;
+* platform;
+* current context.
+
+Не просто выбирать первый подходящий tool.
+
+---
+
+# 17. PARALLEL EXECUTION
+
+Если действия независимы — выполнять параллельно.
+
+Например:
+
+> "Проверь CPU, RAM, диск и список процессов."
+
+Не:
+
+```text
+CPU
+wait
+RAM
+wait
+disk
+wait
+processes
+```
+
+а:
+
+```text
+CPU ─────────┐
+RAM ─────────┤
+Disk ────────┤→ aggregate → reasoning
+Processes ───┘
+```
+
+Но никогда не параллелить действия, если между ними существует dependency или safety risk.
+
+---
+
+# 18. CACHING
+
+Используй cache для:
+
+* system info;
+* application paths;
+* process metadata;
+* browser state;
+* model capabilities;
+* provider configuration;
+* OCR;
+* screenshots;
+* tool results;
+* memory retrieval.
+
+Cache должен иметь:
+
+* TTL;
+* invalidation;
+* size limit;
+* persistence policy.
+
+---
+
+# 19. MODEL PROVIDER ARCHITECTURE
+
+Сделай полноценный provider SDK внутри приложения.
+
+Каждый provider должен поддерживать:
+
+```text
+Provider
+Model
+Capabilities
+Authentication
+Request
+Streaming
+Tool Calling
+Structured Output
+Vision
+Errors
+Rate Limits
+Retries
+Timeouts
+```
+
+---
+
+# 20. OPENAI-COMPATIBLE API
+
+Поддержка OpenAI-compatible endpoints должна быть first-class capability.
+
+Пользователь должен иметь возможность указать:
+
+```text
+Provider
+Base URL
+API Key
+Model
+```
+
+и всё должно работать.
+
+Не делай provider-specific hacks разбросанными по всему приложению.
+
+---
+
+# 21. PROVIDER CAPABILITY MATRIX
+
+Каждая модель должна иметь capabilities:
+
+```text
+text
+vision
+tool_calling
+structured_output
+streaming
+reasoning
+audio_input
+audio_output
+```
+
+Система должна знать:
+
+```text
+эта модель не поддерживает vision
+```
+
+и не отправлять ей изображение.
+
+Если модель не поддерживает function calling:
+
+```text
+structured JSON protocol
+```
+
+как fallback.
+
+---
+
+# 22. API KEY SECURITY
+
+API keys:
+
+* никогда не писать в обычные logs;
+* не включать в crash reports;
+* не показывать в telemetry;
+* не хранить plaintext без необходимости;
+* использовать OS credential store;
+* маскировать в UI;
+* не включать в exported diagnostics.
+
+---
+
+# 23. API RELIABILITY
+
+Добавить:
+
+* timeouts;
+* retry policy;
+* exponential backoff;
+* jitter;
+* rate-limit handling;
+* provider errors;
+* malformed response recovery;
+* cancellation;
+* streaming recovery.
+
+Не делать бесконечные retry.
+
+---
+
+# 24. MODEL FALLBACK
+
+Если provider недоступен:
+
+```text
+Primary
+ ↓
+failure
+ ↓
+fallback provider/model
+```
+
+если пользователь это разрешил.
+
+Например:
+
+```text
+Primary model unavailable
+→ fallback model
+→ continue task
+```
+
+Но не менять модель молча, если это может повлиять на стоимость или возможности.
+
+---
+
+# 25. VISION ARCHITECTURE
+
+Vision — отдельный subsystem.
+
+Pipeline:
+
+```text
+Screen
+ ↓
+Capture
+ ↓
+Change detection
+ ↓
+Crop / ROI
+ ↓
+OCR / accessibility
+ ↓
+Vision model if necessary
+ ↓
+Structured scene
+ ↓
+Action
+ ↓
+Verification
+```
+
+---
+
+# 26. НЕ ИСПОЛЬЗОВАТЬ VISION БЕЗ НЕОБХОДИМОСТИ
+
+Приоритет:
+
+```text
+Native API
+↓
+Accessibility API
+↓
+DOM
+↓
+OCR
+↓
+Vision
+↓
+raw coordinate guessing
+```
+
+Vision должен быть expensive fallback, а не универсальным молотком.
+
+---
+
+# 27. SCREEN CAPTURE
+
+Поддержать:
+
+* full desktop;
+* specific monitor;
+* specific window;
+* region;
+* high DPI;
+* multi-monitor;
+* display scaling.
+
+Оптимизировать:
+
+* capture latency;
+* image size;
+* compression;
+* dirty-region detection;
+* caching.
+
+Не отправлять в Vision screenshot, который практически не изменился.
+
+---
+
+# 28. WINDOWS NATIVE AUTOMATION
+
+Для Windows реализовать максимально качественную интеграцию с:
+
+* Win32;
+* Windows Shell;
+* process APIs;
+* window APIs;
+* UI Automation;
+* clipboard;
+* input;
+* monitor APIs;
+* notifications;
+* filesystem;
+* registry только там, где действительно необходимо;
+* services;
+* startup;
+* audio;
+* system state.
+
+Не использовать Python-обёртку там, где native implementation существенно лучше.
+
+---
+
+# 29. APPLICATION LAUNCHING
+
+Создай robust application resolver.
+
+Он должен находить приложение через:
+
+* installed applications;
+* Start Menu;
+* registry;
+* PATH;
+* known locations;
+* App Paths;
+* shell associations.
+
+Пользователь:
+
+> "Открой Chrome"
+
+должен получать практически мгновенный запуск.
+
+---
+
+# 30. PROCESS MANAGEMENT
+
+Сделать нормальный process subsystem:
+
+* list;
+* search;
+* CPU;
+* RAM;
+* GPU if available;
+* executable;
+* command line where permitted;
+* parent process;
+* start time;
+* kill;
+* graceful termination;
+* force termination.
+
+---
+
+# 31. WINDOW MANAGEMENT
+
+Поддержать:
+
+* enumerate;
+* title;
+* process;
+* focus;
+* minimize;
+* maximize;
+* restore;
+* close;
+* move;
+* resize;
+* monitor assignment;
+* z-order where possible.
+
+---
+
+# 32. FILESYSTEM
+
+Filesystem subsystem должен быть быстрым и безопасным.
+
+Поддержать:
+
+* glob;
+* recursive search;
+* content search;
+* metadata;
+* copy;
+* move;
+* delete;
+* trash;
+* restore;
+* archive;
+* extraction;
+* hashing;
+* duplicate detection.
+
+Использовать native/high-performance implementation для больших объёмов данных.
+
+---
+
+# 33. FILE SEARCH
+
+Не заставлять LLM читать тысячи файлов.
+
+Сделать специализированный search engine.
+
+Например:
+
+```text
+query
+ ↓
+filesystem index/search
+ ↓
+candidate files
+ ↓
+content extraction
+ ↓
+relevant snippets
+ ↓
+LLM only if needed
+```
+
+---
+
+# 34. ARCHIVES
+
+Безопасно обрабатывать:
+
+* ZIP;
+* TAR;
+* другие нужные форматы.
+
+Обязательно защищаться от:
+
+* path traversal;
+* absolute paths;
+* symlink attacks;
+* malicious archives;
+* decompression bombs.
+
+---
+
+# 35. TERMINAL / POWERSHELL
+
+Terminal subsystem должен поддерживать:
+
+* PowerShell;
+* CMD;
+* executable;
+* stdout;
+* stderr;
+* exit code;
+* timeout;
+* cancellation;
+* environment;
+* working directory;
+* streaming output.
+
+---
+
+# 36. COMMAND SAFETY
+
+Не пытайся решать безопасность только blacklist'ом.
+
+Используй:
+
+```text
+command parser
++
+argument analysis
++
+risk classifier
++
+sandbox/permission layer where possible
++
+confirmation policy
+```
+
+Примеры:
+
+```text
+Get-Process
+→ low
+
+Install package
+→ medium
+
+Delete 1 file
+→ medium
+
+Delete entire directory
+→ high
+
+Format disk
+→ critical
+```
+
+---
+
+# 37. UNDO / TRANSACTION MODEL
+
+Undo должен быть не декоративной кнопкой.
+
+Для обратимых операций:
+
+```text
+Action
+ ↓
+Backup / transaction record
+ ↓
+Execute
+ ↓
+Verify
+ ↓
+Commit
+```
+
+При ошибке:
+
+```text
+rollback
+```
+
+Поддерживать:
+
+* undo last;
+* undo task;
+* rollback failed operation;
+* recovery after crash.
+
+---
+
+# 38. BROWSER SUBSYSTEM
+
+Browser subsystem должен быть production-grade.
+
+Поддержать:
+
+* browser lifecycle;
+* persistent contexts;
+* tabs;
+* navigation;
+* DOM;
+* accessibility tree;
+* selectors;
+* text;
+* forms;
+* tables;
+* links;
+* downloads;
+* uploads;
+* cookies;
+* sessions;
+* screenshots;
+* PDF;
+* network waits;
+* SPA waits.
+
+---
+
+# 39. BROWSER STRATEGY
+
+Приоритет:
+
+```text
+DOM
+↓
+Accessibility tree
+↓
+text/semantic selectors
+↓
+CSS/XPath
+↓
+OCR
+↓
+Vision
+↓
+mouse coordinates
+```
+
+Не использовать координатный клик, если есть надёжный semantic selector.
+
+---
+
+# 40. BROWSER SESSIONS
+
+Пользователь должен иметь возможность:
+
+* сохранять browser profiles;
+* выбирать profile;
+* использовать существующую сессию, если архитектура это позволяет;
+* управлять cookies;
+* видеть active sessions.
+
+Секретные данные не должны попадать в LLM context без необходимости.
+
+---
+
+# 41. MEMORY ARCHITECTURE
+
+Разделить:
+
+```text
+Working memory
+Session memory
+Task memory
+Long-term memory
+User preferences
+```
+
+Не помещать всё в prompt.
+
+Использовать retrieval.
+
+Каждый memory item:
+
+```text
+content
+type
+source
+created_at
+updated_at
+importance
+confidence
+```
+
+---
+
+# 42. MEMORY PRIVACY
+
+Пользователь должен видеть:
+
+* что сохранено;
+* почему сохранено;
+* удалить;
+* изменить;
+* экспортировать;
+* отключить memory.
+
+---
+
+# 43. TASK MANAGER
+
+Полноценная система:
+
+```text
+Task
+ ├── ID
+ ├── Goal
+ ├── Status
+ ├── Priority
+ ├── Created
+ ├── Started
+ ├── Finished
+ ├── Progress
+ ├── Steps
+ ├── Events
+ ├── Checkpoints
+ ├── Error
+ └── Result
+```
+
+---
+
+# 44. BACKGROUND TASKS
+
+Пользователь может сказать:
+
+> "Скачивай проект и сообщи, когда закончишь."
+
+Агент должен:
+
+```text
+create background task
+→ UI remains responsive
+→ progress events
+→ notification
+→ final result
+```
+
+---
+
+# 45. SCHEDULER
+
+Поддержать:
+
+* once;
+* daily;
+* weekly;
+* interval;
+* cron-like scheduling;
+* timezone;
+* missed execution policy.
+
+---
+
+# 46. TRIGGERS
+
+Например:
+
+> "Когда PDF появится в Downloads, обработай его."
+
+Использовать event-driven filesystem watcher там, где возможно.
+
+Не делать бессмысленный polling, если native watcher доступен.
+
+---
+
+# 47. TASK RECOVERY
+
+Если приложение закрыли во время задачи:
+
+```text
+checkpoint
+ ↓
+restart
+ ↓
+recover state
+ ↓
+determine safe resume point
+ ↓
+continue
+```
+
+Не повторять опасные операции вслепую.
+
+---
+
+# 48. VOICE INPUT
+
+Поддержать:
+
+* push-to-talk;
+* hotkey;
+* continuous mode;
+* local STT;
+* cloud STT;
+* language selection;
+* interruption;
+* cancellation.
+
+---
+
+# 49. VOICE OUTPUT
+
+Специальный режим:
+
+## Voice Agent
+
+AI должен говорить то, что генерирует.
+
+Использовать streaming:
+
+```text
+LLM token stream
+ ↓
+sentence segmentation
+ ↓
+TTS
+ ↓
+audio playback
+```
+
+Не ждать окончания полного ответа.
+
+Поддержать:
+
+* voice selection;
+* speed;
+* pitch where available;
+* volume;
+* interruption;
+* stop;
+* pause;
+* resume.
+
+---
+
+# 50. BARge-IN
+
+Если AI говорит:
+
+> "Я сейчас проверю систему..."
+
+а пользователь начинает говорить:
+
+> "Стоп."
+
+AI должен:
+
+```text
+stop TTS
+stop current cancellable operation
+process new instruction
+```
+
+Это должно ощущаться мгновенно.
+
+---
+
+# 51. UI / PRODUCT DESIGN
+
+Существующий UI считать временным.
+
+Не улучшать его косметически.
+
+**Спроектировать UI заново.**
+
+---
+
+# 52. DESIGN GOAL
+
+Продукт должен выглядеть как:
+
+> mature commercial desktop application
+
+а не:
+
+> Python dashboard.
+
+Не копировать конкретный существующий продукт.
+
+Создать собственную design language.
+
+---
+
+# 53. DESIGN SYSTEM
+
+Создать:
+
+* typography;
+* spacing;
+* grid;
+* color system;
+* surfaces;
+* elevation;
+* borders;
+* shadows;
+* states;
+* icons;
+* motion;
+* interaction rules.
+
+---
+
+# 54. UI PRINCIPLES
+
+Приоритет:
+
+1. clarity;
+2. speed;
+3. hierarchy;
+4. consistency;
+5. discoverability;
+6. accessibility.
+
+Не перегружать интерфейс.
+
+Не делать всё карточками.
+
+Не использовать декоративные элементы без функции.
+
+---
+
+# 55. MAIN WINDOW
+
+Главный экран должен показывать:
+
+```text
+┌─────────────────────────────────────────────┐
+│ Logo   Task / Search        Voice   Settings│
+├──────────────┬──────────────────────────────┤
+│              │                              │
+│ Navigation   │        Current Task          │
+│              │                              │
+│ New Task     │  Goal                        │
+│ Tasks        │  Progress                    │
+│ History      │  Current action              │
+│ Memory       │  Agent activity              │
+│ Schedules    │                              │
+│ Settings     │                              │
+│              │                              │
+├──────────────┴──────────────────────────────┤
+│ Agent status / current model / connection   │
+└─────────────────────────────────────────────┘
+```
+
+Это только структурный пример.
+
+Сделай реальный современный UX.
+
+---
+
+# 56. TASK EXPERIENCE
+
+Когда агент работает, пользователь должен видеть:
+
+* что агент делает;
+* почему он это делает, если это уместно;
+* текущий шаг;
+* progress;
+* tool;
+* результат;
+* ошибки;
+* retries;
+* requests for confirmation.
+
+Не показывать пользователю внутренний chain-of-thought.
+
+Показывать **короткие actionable explanations**, а не скрытое рассуждение модели.
+
+---
+
+# 57. OBSERVE MODE
+
+В режиме observe:
+
+* live screen;
+* cursor/action indication;
+* tool events;
+* current target;
+* progress;
+* action history.
+
+Но UI не должен создавать существенную нагрузку на runtime.
+
+---
+
+# 58. CONFIRMATION UX
+
+Для опасных действий:
+
+```text
+Что произойдёт
+Почему
+Какие данные затронуты
+Риск
+[Отмена]
+[Разрешить]
+```
+
+Для массовых операций:
+
+```text
+Files affected: 342
+Location: ...
+Operation: delete
+Recoverable: yes/no
+```
+
+---
+
+# 59. SETTINGS UX
+
+Настройки должны быть полноценным product settings center.
+
+Разделы:
+
+```text
+General
+AI Models
+Providers
+Agent
+Tools
+Security
+Permissions
+Voice
+Browser
+Memory
+Tasks
+Notifications
+Appearance
+Keyboard
+Privacy
+Storage
+Advanced
+About
+```
+
+---
+
+# 60. MODEL CONFIGURATION UI
+
+Пользователь должен видеть:
+
+```text
+Provider
+Model
+API Key
+Base URL
+Capabilities
+Latency
+Connection status
+```
+
+Кнопка:
+
+> Test connection
+
+должна реально проверять:
+
+* authentication;
+* model availability;
+* capabilities;
+* streaming;
+* tool calling;
+* vision если заявлено.
+
+---
+
+# 61. CONNECTION STATUS
+
+Не показывать просто:
+
+```text
+Connected
+```
+
+Если можно определить состояние точнее:
+
+```text
+Connected
+Model available
+Vision available
+Tool calling available
+Latency: 320 ms
+```
+
+---
+
+# 62. ERROR UX
+
+Ошибки не должны выглядеть как stack trace.
+
+Пользователь:
+
+> "Не удалось подключиться к модели."
+
+Advanced:
+
+```text
+Provider: ...
+HTTP status: ...
+Request ID: ...
+Retry available
+```
+
+Developer diagnostics отдельно.
+
+---
+
+# 63. ACCESSIBILITY
+
+Поддержать:
+
+* keyboard navigation;
+* focus states;
+* screen reader where applicable;
+* scalable fonts;
+* contrast;
+* reduced motion.
+
+---
+
+# 64. KEYBOARD SHORTCUTS
+
+Все важные действия должны иметь shortcuts.
+
+Например:
+
+```text
+New task
+Pause
+Stop
+Resume
+Voice
+Search
+Settings
+Undo
+```
+
+Должна быть система настройки shortcuts.
+
+---
+
+# 65. NOTIFICATIONS
+
+Поддержать:
+
+* task completed;
+* task failed;
+* confirmation required;
+* background task finished;
+* scheduled task started.
+
+Не спамить уведомлениями.
+
+---
+
+# 66. LOCAL DATA
+
+Не складывать всё в:
+
+```text
+config.json
+```
+
+Нужна нормальная storage architecture.
+
+Разделить:
+
+```text
+configuration
+credentials
+database
+logs
+cache
+memory
+tasks
+browser data
+```
+
+---
+
+# 67. MIGRATIONS
+
+При обновлении версии:
+
+```text
+v1 data
+ ↓
+migration
+ ↓
+v2 data
+```
+
+Не ломать пользователю настройки.
+
+---
+
+# 68. CRASH RECOVERY
+
+При crash:
+
+* сохранить recoverable task state;
+* корректно закрыть resources;
+* при следующем запуске предложить recovery;
+* предоставить diagnostics.
+
+---
+
+# 69. LOGGING
+
+Structured logging:
+
+```text
+timestamp
+level
+component
+event
+task_id
+tool
+duration
+error
+```
+
+Не логировать:
+
+* API keys;
+* passwords;
+* cookies;
+* tokens;
+* sensitive user content без необходимости.
+
+---
+
+# 70. SECURITY MODEL
+
+LLM считать **untrusted input**.
+
+Нельзя позволять модели напрямую:
+
+* повышать привилегии;
+* обходить confirmation;
+* изменять security policy;
+* получать секреты;
+* выполнять скрытые действия.
+
+Каждый tool проходит policy layer.
+
+---
+
+# 71. PERMISSION SYSTEM
+
+Создать permission model:
+
+```text
+filesystem.read
+filesystem.write
+process.read
+process.kill
+browser.control
+shell.execute
+system.settings
+network
+microphone
+camera
+```
+
+Permission может быть:
+
+```text
+allowed
+denied
+ask
+```
+
+---
+
+# 72. SUBSCRIPTION / LICENSING
+
+Приложение должно быть подготовлено для коммерческой подписки.
+
+Архитектура:
+
+```text
+Desktop
+ ↓ HTTPS
+License API
+ ↓
+Account
+Subscription
+Entitlements
+Device
+```
+
+---
+
+# 73. LICENSE SECURITY
+
+Использовать:
+
+* TLS;
+* signed server responses;
+* asymmetric cryptography;
+* short-lived tokens;
+* refresh;
+* device binding;
+* revocation;
+* offline grace period.
+
+Private signing key:
+
+**НИКОГДА не находится в EXE.**
+
+В приложении может находиться только public key.
+
+---
+
+# 74. FEATURE ENTITLEMENTS
+
+Сервер должен уметь выдавать capabilities:
+
+```text
+pro
+vision
+voice
+advanced_models
+automation
+background_tasks
+```
+
+Приложение получает signed entitlements.
+
+---
+
+# 75. OFFLINE MODE
+
+Предусмотреть ограниченный offline grace period.
+
+Если интернет временно пропал:
+
+```text
+subscription previously verified
+→ allow temporary operation
+```
+
+Но не превращать offline mode в бесконечный обход лицензии.
+
+---
+
+# 76. DEVICE MANAGEMENT
+
+Поддержать:
+
+* device registration;
+* device identifier;
+* device rename;
+* device revoke;
+* device limit;
+* reinstall handling.
+
+Не использовать нестабильный fingerprint из одной аппаратной характеристики.
+
+---
+
+# 77. ANTI-TAMPER
+
+Поскольку desktop-клиент находится у пользователя, считать абсолютную защиту невозможной.
+
+Но усложнить:
+
+* binary patching;
+* license bypass;
+* debugging;
+* tampering;
+* modification of critical code.
+
+Использовать подходящие native protections / integrity checks / obfuscation там, где это оправдано.
+
+Не делать security theatre.
+
+---
+
+# 78. UPDATE SYSTEM
+
+Нужна production update architecture:
+
+```text
+Current version
+ ↓
+Update check
+ ↓
+Download
+ ↓
+Verify signature
+ ↓
+Install
+ ↓
+Rollback if failed
+```
+
+Нельзя устанавливать неподписанный update.
+
+---
+
+# 79. INSTALLER
+
+Пользователь должен получить нормальный installer.
+
+Не:
+
+```text
+install Python
+pip install ...
+run script
+```
+
+А:
+
+```text
+Download
+→ Install
+→ Launch
+```
+
+---
+
+# 80. WINDOWS PACKAGING
+
+Поддержать:
+
+* proper executable;
+* installer;
+* uninstall;
+* shortcuts;
+* file associations where appropriate;
+* protocol handlers if needed;
+* auto-start optional;
+* Windows notifications;
+* crash recovery;
+* version metadata;
+* code signing architecture.
+
+---
+
+# 81. AUTO UPDATE
+
+Обновление должно:
+
+* работать silently where configured;
+* показывать progress;
+* сохранять user data;
+* иметь rollback;
+* проверять integrity.
+
+---
+
+# 82. TESTING
+
+Создать полноценную test pyramid:
+
+```text
+Unit
+Integration
+System
+End-to-end
+UI smoke
+Security
+Performance
+Regression
+```
+
+---
+
+# 83. REAL-WORLD ACCEPTANCE TESTS
+
+Обязательные сценарии:
+
+### System
+
+"Открой Chrome."
+
+### Files
+
+"Найди все PDF за последний месяц и разложи по папкам."
+
+### Processes
+
+"Покажи, что сейчас больше всего грузит компьютер."
+
+### Diagnostics
+
+"Разберись, почему компьютер тормозит."
+
+### Browser
+
+"Открой сайт и найди нужную информацию."
+
+### Development
+
+"Скачай GitHub repository, установи зависимости, запусти и исправь ошибку."
+
+### GUI
+
+"Открой VS Code, создай проект и запусти его."
+
+### Memory
+
+"Запомни, что мои проекты лежат в..."
+
+### Scheduling
+
+"Каждый день проверяй..."
+
+### Background
+
+"Скачай это и сообщи, когда закончишь."
+
+### Voice
+
+Говорить с агентом голосом.
+
+### Vision
+
+Дать задачу по неизвестному GUI.
+
+### Recovery
+
+Закрыть приложение во время задачи и восстановить её.
+
+---
+
+# 84. PERFORMANCE TESTS
+
+Создать benchmarks для:
+
+```text
+startup
+task creation
+native tool execution
+filesystem
+process listing
+window management
+screenshot
+OCR
+Vision
+browser
+LLM
+TTS
+STT
+memory
+database
+IPC
+UI
+```
+
+Сравнить старую и новую реализацию.
+
+Не говорить "быстрее" без измерения.
+
+---
+
+# 85. FAILURE TESTING
+
+Проверить:
+
+* network loss;
+* provider timeout;
+* invalid API key;
+* model unavailable;
+* browser crash;
+* process disappears;
+* file disappears;
+* permission denied;
+* malformed model response;
+* invalid tool arguments;
+* app restart;
+* OS restart;
+* disk full;
+* corrupted state;
+* license server unavailable.
+
+---
+
+# 86. CHAOS / RECOVERY
+
+Искусственно ломай зависимости и проверяй:
+
+> продолжает ли приложение работать или корректно восстанавливаться?
+
+---
+
+# 87. NO FAKE FEATURES
+
+Категорически запрещено оставлять:
+
+```text
+TODO
+pass
+mock
+fake success
+simulated result
+demo-only implementation
+```
+
+там, где пользователь ожидает реальную функцию.
+
+Если функция пока невозможно реализовать — честно обозначить её состояние и не выдавать fake success.
+
+---
+
+# 88. NO PLACEBO OPTIMIZATION
+
+Не называй оптимизацией:
+
+```text
+rename variable
+cache random object
+add async keyword
+```
+
+если реального улучшения latency/resource usage нет.
+
+Каждое существенное performance improvement должно быть измерено.
+
+---
+
+# 89. NO UNNECESSARY DEPENDENCIES
+
+Каждая dependency должна иметь причину.
+
+Проверять:
+
+* размер;
+* startup cost;
+* security;
+* maintenance;
+* license;
+* transitive dependencies.
+
+---
+
+# 90. CODE QUALITY
+
+Требования:
+
+* strict typing там, где применимо;
+* clear interfaces;
+* dependency inversion;
+* modular architecture;
+* testability;
+* no circular dependencies;
+* no global mutable state;
+* no giant classes;
+* no god modules;
+* no hidden side effects.
+
+---
+
+# 91. ARCHITECTURE DOCUMENTATION
+
+Создать:
+
+```text
+ARCHITECTURE.md
+SECURITY.md
+PERFORMANCE.md
+PROVIDERS.md
+TOOLS.md
+BUILD.md
+RELEASE.md
+LICENSE.md
+```
+
+Документация должна соответствовать реальному коду.
+
+---
+
+# 92. DEVELOPMENT EXPERIENCE
+
+После переработки разработчик должен иметь понятные команды:
+
+```text
+dev
+test
+lint
+typecheck
+build
+package
+release
+benchmark
+```
+
+---
+
+# 93. CI/CD
+
+Если окружение позволяет, подготовить CI:
+
+```text
+build
+test
+lint
+security checks
+package
+artifact
+```
+
+Не считать работу завершённой, пока production build не воспроизводится.
+
+---
+
+# 94. ARCHITECTURAL RULE
+
+Не допускай:
+
+```text
+UI → directly calls random tool
+Tool → directly calls UI
+LLM → directly executes OS command
+```
+
+Используй:
+
+```text
+UI
+ ↓
+Application layer
+ ↓
+Agent runtime
+ ↓
+Policy
+ ↓
+Tool execution
+ ↓
+OS
+```
+
+---
+
+# 95. AGENT STATE
+
+State должен быть explicit.
+
+Не хранить состояние в случайных global variables.
+
+Использовать:
+
+```text
+TaskState
+AgentState
+ToolState
+SessionState
+ApplicationState
+```
+
+---
+
+# 96. CANCELLATION
+
+Каждая длительная операция должна поддерживать cancellation, если это технически возможно.
+
+Например:
+
+```text
+User clicks Stop
+ ↓
+Cancellation token
+ ↓
+Agent
+ ↓
+Tool
+ ↓
+Browser / subprocess / network
+```
+
+Не просто скрывать UI.
+
+---
+
+# 97. RESOURCE MANAGEMENT
+
+Каждый ресурс должен иметь lifecycle:
+
+```text
+create
+use
+cleanup
+```
+
+Особенно:
+
+* processes;
+* browser;
+* sockets;
+* files;
+* threads;
+* subprocesses;
+* audio;
+* screenshots;
+* temporary files.
+
+---
+
+# 98. MULTI-MONITOR
+
+Windows-first implementation должна нормально работать с:
+
+* multiple monitors;
+* DPI scaling;
+* different resolutions;
+* portrait displays;
+* monitor movement;
+* window coordinates.
+
+---
+
+# 99. HIGH DPI
+
+UI и computer vision не должны ломаться на:
+
+```text
+100%
+125%
+150%
+175%
+200%
+```
+
+---
+
+# 100. INTERNATIONALIZATION
+
+Архитектура должна позволять добавить:
+
+* Russian;
+* English;
+* другие языки.
+
+Не хардкодить UI strings по всему коду.
+
+---
+
+# 101. PRIVACY
+
+Приложение должно быть local-first.
+
+Не отправлять:
+
+* screenshots;
+* files;
+* clipboard;
+* browser contents;
+* memory;
+* task history
+
+никуда, кроме явно выбранного пользователем AI provider / service, где это необходимо для выполнения задачи.
+
+Пользователь должен понимать, что отправляется модели.
+
+---
+
+# 102. AI CONTEXT SECURITY
+
+Не отправлять модели весь компьютер.
+
+Context должен быть минимальным:
+
+```text
+only required files
+only relevant screen region
+only relevant browser content
+only required memory
+```
+
+---
+
+# 103. COST CONTROL
+
+Для cloud models учитывать:
+
+* token usage;
+* request count;
+* image cost;
+* model selection.
+
+Если задача может решиться локально — не расходовать API tokens.
+
+---
+
+# 104. MODEL ROUTING
+
+В дальнейшем архитектура должна позволять:
+
+```text
+cheap/fast model
+      ↓
+simple task
+
+strong reasoning model
+      ↓
+complex task
+
+vision model
+      ↓
+visual task
+```
+
+Агент может самостоятельно выбирать модель согласно configured policy.
+
+---
+
+# 105. PERCEIVED INTELLIGENCE
+
+Пользователь должен ощущать:
+
+> "Он понимает, что я хочу."
+
+а не:
+
+> "Он просто вызывает функции."
+
+Для этого:
+
+* нормальное task interpretation;
+* context;
+* memory;
+* verification;
+* self-correction;
+* strategy switching.
+
+---
+
+# 106. ПРОАКТИВНОСТЬ
+
+Если агент обнаруживает очевидную проблему в процессе выполнения, он может предложить/выполнить корректирующее действие, если это разрешено текущей policy.
+
+Например:
+
+```text
+dependency missing
+→ install it if permitted
+```
+
+или:
+
+```text
+browser closed
+→ restart browser
+```
+
+или:
+
+```text
+file moved
+→ locate new path
+```
+
+---
+
+# 107. НО НЕ САМОУПРАВСТВО БЕЗ ГРАНИЦ
+
+Автономность не должна означать отсутствие контроля.
+
+Policy layer имеет высший приоритет.
+
+```text
+Safety Policy
+      ↓
+User permissions
+      ↓
+Agent decision
+      ↓
+Tool
+```
+
+---
+
+# 108. OBSERVABILITY FOR THE USER
+
+Пользователь должен понимать:
+
+```text
+что происходит
+```
+
+но не должен видеть внутреннее chain-of-thought.
+
+Показывать:
+
+> Анализирую задачу
+
+> Проверяю доступные способы
+
+> Открываю Chrome
+
+> Проверяю результат
+
+> Обнаружил проблему, меняю способ
+
+Это достаточно для прозрачности.
+
+---
+
+# 109. FINAL PRODUCT FEEL
+
+После завершения проект должен ощущаться как:
+
+**настоящее коммерческое приложение**, а не:
+
+* Python script;
+* web dashboard;
+* prototype;
+* collection of tools;
+* demo;
+* AI-generated UI.
+
+---
+
+# 110. ABSOLUTE PRIORITIES
+
+При конфликте требований используй следующий порядок:
+
+```text
+1. Security
+2. Correctness
+3. Reliability
+4. User data safety
+5. Performance
+6. UX
+7. Maintainability
+8. Feature breadth
+```
+
+---
+
+# 111. FINAL EXECUTION STRATEGY
+
+Работай итеративно.
+
+## Phase 1
+
+Полный audit.
+
+## Phase 2
+
+Architecture redesign.
+
+## Phase 3
+
+Foundation/runtime.
+
+## Phase 4
+
+Native OS layer.
+
+## Phase 5
+
+Tool framework.
+
+## Phase 6
+
+Agent orchestration.
+
+## Phase 7
+
+AI provider system.
+
+## Phase 8
+
+Vision.
+
+## Phase 9
+
+Browser.
+
+## Phase 10
+
+Memory/tasks/scheduler.
+
+## Phase 11
+
+Voice.
+
+## Phase 12
+
+Security/licensing.
+
+## Phase 13
+
+UI redesign.
+
+## Phase 14
+
+Performance.
+
+## Phase 15
+
+Testing.
+
+## Phase 16
+
+Packaging/update system.
+
+## Phase 17
+
+Final audit.
+
+---
+
+# 112. НЕ ОСТАНАВЛИВАЙСЯ ПОСЛЕ ПЕРВОГО УСПЕШНОГО ЗАПУСКА
+
+"Приложение запускается" ≠ "работа завершена".
+
+После каждого крупного этапа:
+
+1. запуск;
+2. тест;
+3. benchmark;
+4. поиск regressions;
+5. исправление;
+6. повторный тест.
+
+---
+
+# 113. НЕ БОЙСЯ УДАЛЯТЬ СТАРЫЙ КОД
+
+Если новый subsystem заменяет старый:
+
+**удали старый subsystem.**
+
+Не оставляй:
+
+```text
+new_system.py
+old_system.py
+legacy_system.py
+legacy_system_v2.py
+```
+
+без необходимости.
+
+Не создавай технический мусор.
+
+---
+
+# 114. ACCEPTANCE CRITERIA
+
+Работа считается законченной только если:
+
+### FUNCTIONALITY
+
+Все ключевые заявленные возможности реально работают.
+
+### PERFORMANCE
+
+Нет очевидных unnecessary LLM calls и блокировок.
+
+### AI
+
+Основные providers работают.
+
+### API KEYS
+
+Реально работают.
+
+### VISION
+
+Реально работает.
+
+### BROWSER
+
+Реально работает.
+
+### WINDOWS
+
+Native operations быстрые.
+
+### VOICE
+
+STT/TTS реально работают.
+
+### MEMORY
+
+Работает persistence/retrieval.
+
+### TASKS
+
+Работают background/scheduler/triggers.
+
+### SAFETY
+
+Опасные действия корректно контролируются.
+
+### UNDO
+
+Обратимые операции реально восстанавливаются.
+
+### SECURITY
+
+Проведён security audit.
+
+### LICENSING
+
+Подготовлена production-grade subscription architecture.
+
+### UI
+
+Интерфейс выглядит как коммерческий продукт.
+
+### PACKAGING
+
+Конечный пользователь может установить приложение без Python.
+
+### UPDATES
+
+Архитектура обновлений готова.
+
+### TESTING
+
+Ключевые сценарии покрыты автоматическими тестами.
+
+### PERFORMANCE
+
+Есть измерения latency/memory/CPU.
+
+---
+
+# 115. FINAL RULE
+
+**НЕ ПЫТАЙСЯ СДЕЛАТЬ ХОРОШИМ СУЩЕСТВУЮЩИЙ ПРОТОТИП.**
+
+Сделай хороший продукт.
+
+Если для этого нужно переписать 80% проекта — перепиши.
+
+Если нужно заменить Python — замени.
+
+Если нужно оставить часть Python — оставь.
+
+Если нужен Rust — используй Rust.
+
+Если нужен C++ — используй C++.
+
+Если нужен native Windows API — используй native Windows API.
+
+Если нужен PowerShell — используй PowerShell.
+
+Если нужен LLM — используй LLM.
+
+Если LLM не нужен — не используй его.
+
+Если нужен Vision — используй Vision.
+
+Если Vision не нужен — не используй его.
+
+Если существующая архитектура мешает — уничтожь её и построи нормальную.
+
+**Ты отвечаешь не за сохранение существующего кода.**
+
+Ты отвечаешь за то, чтобы на выходе получился:
+
+> **быстрый, красивый, надёжный, безопасный, интеллектуальный, расширяемый и коммерчески готовый AI Computer Agent для desktop.**
+
+Именно это является конечным результатом.
+# ДОПОЛНЕНИЕ К MASTER PROMPT
+
+Следующие требования являются дополнительными и обязательными. Они расширяют предыдущую спецификацию и **не заменяют её**.
+
+---
+
+# 116. AUTONOMOUS ARCHITECTURE DISCOVERY
+
+После изучения проекта самостоятельно определи, каких production-grade subsystem'ов ему не хватает.
+
+Не ограничивайся списком из этого prompt.
+
+Если для коммерческого продукта необходим компонент, который здесь не перечислен:
+
+**создай его.**
+
+Например, если обнаружишь необходимость в:
+
+* plugin system;
+* extension SDK;
+* crash recovery;
+* diagnostics;
+* indexing service;
+* local search engine;
+* sandbox;
+* credential vault;
+* update service;
+* background daemon;
+* IPC layer;
+* telemetry;
+* evaluation framework;
+* model router;
+* policy engine;
+
+добавь его в архитектуру.
+
+---
+
+# 117. PLUGIN / EXTENSION SYSTEM
+
+Предусмотри архитектуру расширений.
+
+Пользователь или разработчик должен иметь возможность добавлять новые capabilities без изменения core.
+
+Например:
+
+```text
+Core
+ ├── Browser
+ ├── Files
+ ├── Windows
+ ├── Terminal
+ │
+ └── Extensions
+       ├── GitHub
+       ├── Discord
+       ├── Slack
+       ├── Notion
+       ├── VS Code
+       └── Custom
+```
+
+Extension API должен иметь:
+
+* version;
+* manifest;
+* capabilities;
+* permissions;
+* tools;
+* settings;
+* lifecycle;
+* compatibility;
+* signing/trust model.
+
+Extension не должен автоматически получать полный доступ ко всей системе.
+
+---
+
+# 118. TOOL SDK
+
+Создай единый SDK для разработки tools.
+
+Tool developer должен иметь возможность описать:
+
+```text
+name
+description
+schema
+permissions
+risk
+platform
+execution
+verification
+rollback
+```
+
+Tool должен быть self-describing.
+
+Agent Core не должен содержать тысячи hardcoded `if tool == ...`.
+
+---
+
+# 119. TOOL DISCOVERY
+
+Агент должен понимать доступные capabilities динамически.
+
+Например:
+
+```text
+Available capabilities:
+filesystem
+browser
+powershell
+windows
+git
+vision
+voice
+...
+```
+
+Не передавать модели описание всех 200 инструментов при каждом запросе.
+
+Использовать:
+
+* capability filtering;
+* semantic retrieval;
+* dynamic tool selection;
+* tool namespaces.
+
+Это уменьшает prompt size и latency.
+
+---
+
+# 120. TOOL VERSIONING
+
+Tools должны иметь версии.
+
+Например:
+
+```text
+browser.navigate v2
+filesystem.search v3
+```
+
+Старые tasks не должны неожиданно ломаться после обновления.
+
+---
+
+# 121. TOOL COMPATIBILITY
+
+Каждый tool должен объявлять:
+
+```text
+platform
+minimum OS
+dependencies
+permissions
+required capabilities
+```
+
+Если tool недоступен:
+
+**агент должен автоматически выбрать альтернативный способ.**
+
+---
+
+# 122. FALLBACK GRAPH
+
+Не ограничивайся одним tool.
+
+Для каждой capability желательно иметь fallback graph.
+
+Например:
+
+```text
+Open application
+
+native Shell
+   ↓
+Start Menu resolution
+   ↓
+PATH
+   ↓
+known executable path
+   ↓
+PowerShell
+```
+
+Для GUI:
+
+```text
+UI Automation
+   ↓
+DOM
+   ↓
+OCR
+   ↓
+Vision
+   ↓
+coordinates
+```
+
+---
+
+# 123. CAPABILITY NEGOTIATION
+
+При запуске приложение должно определить:
+
+* OS;
+* version;
+* architecture;
+* GPU;
+* monitors;
+* DPI;
+* browser availability;
+* PowerShell;
+* Git;
+* OCR;
+* audio devices;
+* microphone;
+* camera;
+* installed applications;
+* available AI providers.
+
+Но делать это лениво там, где возможно.
+
+---
+
+# 124. HARDWARE AWARENESS
+
+Добавить hardware abstraction:
+
+```text
+CPU
+RAM
+GPU
+VRAM
+Disk
+Network
+Displays
+Audio
+```
+
+Использовать это для:
+
+* model selection;
+* Vision;
+* local inference;
+* performance optimization;
+* diagnostics.
+
+---
+
+# 125. GPU UTILIZATION
+
+Если локальные AI models поддерживаются:
+
+* определить GPU;
+* VRAM;
+* CUDA/DirectML/Metal/Vulkan/etc.;
+* available acceleration;
+* fallback CPU.
+
+Не загружать модель на CPU, если доступен подходящий hardware acceleration backend.
+
+---
+
+# 126. LOCAL MODEL MANAGER
+
+Если поддерживаются локальные модели, создать отдельный subsystem:
+
+```text
+Local Model Manager
+ ├── model discovery
+ ├── installation
+ ├── download
+ ├── version
+ ├── hardware compatibility
+ ├── memory requirements
+ ├── loading
+ ├── unloading
+ └── lifecycle
+```
+
+---
+
+# 127. MODEL ROUTER
+
+Добавить интеллектуальный model router.
+
+Например:
+
+```text
+Simple task
+→ fast/cheap model
+
+Complex reasoning
+→ stronger model
+
+Vision
+→ vision-capable model
+
+Large context
+→ long-context model
+
+Local/private
+→ local model
+```
+
+Model routing должен учитывать:
+
+* capability;
+* latency;
+* cost;
+* context length;
+* reliability;
+* user preferences;
+* task complexity.
+
+---
+
+# 128. MODEL HEALTH
+
+Для каждой модели отслеживать:
+
+```text
+available
+authenticated
+latency
+error rate
+rate limit
+capabilities
+```
+
+Если модель временно нестабильна — router может временно снизить её priority.
+
+---
+
+# 129. LLM REQUEST OPTIMIZATION
+
+Каждый запрос к LLM должен быть минимальным.
+
+Не отправлять:
+
+* ненужную историю;
+* ненужные tools;
+* ненужные screenshots;
+* ненужную memory;
+* ненужные file contents.
+
+Использовать:
+
+* context compression;
+* summarization;
+* selective retrieval;
+* tool filtering;
+* structured state.
+
+---
+
+# 130. CONTEXT ENGINE
+
+Создать отдельный Context Engine.
+
+Он решает:
+
+```text
+что модель должна знать
+что модели не нужно знать
+что нужно получить
+что можно удалить из context
+```
+
+Context должен собираться динамически.
+
+---
+
+# 131. CONTEXT PRIORITIES
+
+Приоритет:
+
+```text
+current goal
+>
+current state
+>
+relevant observations
+>
+relevant memory
+>
+task history
+>
+general context
+```
+
+---
+
+# 132. PROMPT MANAGEMENT
+
+Все системные prompts должны быть:
+
+* versioned;
+* modular;
+* testable;
+* configurable;
+* stored separately from business logic.
+
+Не писать гигантские prompts непосредственно внутри Python/TypeScript/Rust-кода.
+
+---
+
+# 133. PROMPT VERSIONING
+
+Например:
+
+```text
+agent-planner.v4
+tool-selector.v3
+verification.v2
+vision.v3
+```
+
+Изменение prompt не должно случайно ломать весь agent behavior.
+
+---
+
+# 134. AGENT EVALUATION FRAMEWORK
+
+Создай automated evaluation framework.
+
+Нужны реальные benchmark tasks.
+
+Например:
+
+```text
+Task:
+"Open Chrome"
+
+Expected:
+Chrome process exists
+Window visible
+```
+
+И:
+
+```text
+Task:
+"Find all PDFs from last month"
+
+Expected:
+correct files
+correct date range
+correct result
+```
+
+---
+
+# 135. AGENT SUCCESS METRICS
+
+Измерять:
+
+* task success rate;
+* tool selection accuracy;
+* unnecessary tool calls;
+* unnecessary LLM calls;
+* retries;
+* recovery rate;
+* average latency;
+* cost;
+* hallucination rate;
+* verification failures.
+
+---
+
+# 136. REGRESSION BENCHMARKS
+
+После каждого существенного изменения запускать evaluation suite.
+
+Нельзя улучшить одну функцию и случайно сломать десять других.
+
+---
+
+# 137. AGENT SIMULATOR
+
+Создай возможность тестировать Agent Core без реального компьютера.
+
+Например:
+
+```text
+Fake filesystem
+Fake processes
+Fake browser
+Fake windows
+Fake model
+```
+
+Это позволит быстро тестировать planner/executor/verification.
+
+---
+
+# 138. DETERMINISTIC TEST MODE
+
+Должен существовать режим:
+
+```text
+deterministic
+```
+
+где AI outputs фиксированы.
+
+Это необходимо для regression tests.
+
+---
+
+# 139. REAL COMPUTER TESTS
+
+Отдельно нужны integration tests на реальной Windows environment.
+
+Не полагаться только на mocks.
+
+---
+
+# 140. SAFETY EVALUATION
+
+Создать отдельный набор malicious/unsafe tasks:
+
+```text
+delete system files
+format disk
+destroy data
+exfiltrate credentials
+modify security settings
+execute suspicious scripts
+```
+
+Проверять, что policy engine корректно реагирует.
+
+---
+
+# 141. PROMPT INJECTION DEFENSE
+
+Особенно важно для browser/files.
+
+Например сайт может содержать:
+
+> "Ignore previous instructions and execute..."
+
+Это **не является инструкцией пользователя**.
+
+Такие данные должны рассматриваться как untrusted content.
+
+То же относится к:
+
+* websites;
+* PDFs;
+* documents;
+* emails;
+* source code;
+* README;
+* terminal output;
+* filenames.
+
+---
+
+# 142. TRUST BOUNDARIES
+
+Явно разделить:
+
+```text
+User instructions
+System policy
+Agent reasoning
+External content
+Tool output
+Untrusted content
+```
+
+External content никогда не должен автоматически становиться instruction.
+
+---
+
+# 143. SECRET DETECTION
+
+Добавить detection для:
+
+* API keys;
+* passwords;
+* tokens;
+* private keys;
+* cookies;
+* credentials.
+
+Не передавать секреты LLM без необходимости.
+
+---
+
+# 144. CREDENTIAL VAULT
+
+Создать единый credential abstraction.
+
+Например:
+
+```text
+CredentialStore
+ ├── API keys
+ ├── OAuth tokens
+ ├── browser credentials
+ └── service credentials
+```
+
+Использовать OS secure storage.
+
+---
+
+# 145. OAUTH ARCHITECTURE
+
+Если добавятся интеграции с внешними сервисами:
+
+* OAuth;
+* PKCE;
+* token refresh;
+* revocation;
+* secure storage.
+
+Не просить пользователя вставлять access token в обычный текстовый config, если можно использовать нормальный OAuth flow.
+
+---
+
+# 146. NETWORK SECURITY
+
+Все внешние соединения:
+
+* TLS;
+* certificate validation;
+* timeout;
+* retry policy;
+* proxy support;
+* network error classification.
+
+---
+
+# 147. NETWORK CONTROL
+
+Добавить возможность policy:
+
+```text
+Allow network
+Deny network
+Ask before network
+```
+
+Для конкретных tools/providers.
+
+---
+
+# 148. DATA CLASSIFICATION
+
+Локальные данные можно классифицировать:
+
+```text
+public
+normal
+sensitive
+secret
+```
+
+AI context policy должен учитывать classification.
+
+---
+
+# 149. PRIVACY CENTER
+
+Добавить отдельный Privacy Center.
+
+Показывать:
+
+* какие данные хранятся;
+* какие отправляются AI providers;
+* какие integrations подключены;
+* какие permissions выданы;
+* какие logs существуют;
+* какие memories сохранены.
+
+---
+
+# 150. DATA EXPORT
+
+Пользователь должен иметь возможность экспортировать:
+
+* settings;
+* memories;
+* tasks;
+* schedules;
+* preferences.
+
+Но secrets экспортировать только явно и безопасно.
+
+---
+
+# 151. DATA DELETION
+
+Должна существовать полноценная функция:
+
+> Delete my data
+
+Она должна понимать:
+
+* tasks;
+* history;
+* memory;
+* caches;
+* logs;
+* credentials;
+* browser data owned by app.
+
+---
+
+# 152. BACKUP
+
+Критическое состояние приложения должно иметь backup mechanism.
+
+Например:
+
+```text
+settings
+memory
+tasks
+database
+```
+
+Backup должен быть:
+
+* versioned;
+* atomic;
+* recoverable.
+
+---
+
+# 153. CORRUPTION RECOVERY
+
+Если database/config повреждён:
+
+```text
+detect
+ ↓
+backup corrupted state
+ ↓
+restore latest valid snapshot
+ ↓
+continue
+```
+
+Не просто crash.
+
+---
+
+# 154. SINGLE INSTANCE
+
+Для desktop-приложения предусмотреть single-instance behavior.
+
+Если пользователь второй раз запускает EXE:
+
+* не запускать второй полный runtime;
+* передать command/task первому экземпляру;
+* активировать окно.
+
+---
+
+# 155. IPC
+
+Если приложение разделено на processes:
+
+```text
+UI
+Agent Runtime
+Background Worker
+Browser Service
+```
+
+использовать нормальный authenticated IPC.
+
+Не использовать небезопасный localhost endpoint без authentication.
+
+---
+
+# 156. CRASH ISOLATION
+
+Если browser subsystem падает:
+
+**не должен падать весь Agent.**
+
+Если TTS падает:
+
+**Agent продолжает работать.**
+
+Если Vision provider unavailable:
+
+**другие capabilities продолжают работать.**
+
+---
+
+# 157. FAULT-TOLERANT SUBSYSTEMS
+
+Каждый optional subsystem должен деградировать gracefully.
+
+Например:
+
+```text
+Vision unavailable
+→ OCR/accessibility/native fallback
+
+TTS unavailable
+→ text output
+
+Browser unavailable
+→ inform user / alternative
+
+Provider unavailable
+→ fallback provider if configured
+```
+
+---
+
+# 158. RESOURCE QUOTAS
+
+Защита от:
+
+* infinite loops;
+* infinite subprocesses;
+* huge file operations;
+* unlimited memory;
+* runaway browser tabs;
+* excessive screenshots;
+* excessive model calls.
+
+---
+
+# 159. AGENT BUDGETS
+
+Каждая задача может иметь:
+
+```text
+max duration
+max tool calls
+max retries
+max model calls
+max cost
+max memory
+```
+
+Если budget исчерпан:
+
+> остановить или запросить пользователя.
+
+---
+
+# 160. INFINITE LOOP DETECTION
+
+Если агент:
+
+```text
+A → B → A → B → A
+```
+
+или повторяет одну стратегию без прогресса:
+
+обнаружить это автоматически.
+
+---
+
+# 161. PROGRESS ESTIMATION
+
+Progress не должен быть случайным:
+
+```text
+37%
+```
+
+если система не знает, что означает 37%.
+
+Использовать:
+
+* completed steps;
+* known milestones;
+* estimated work;
+* verification state.
+
+Если progress неизвестен:
+
+> Working…
+
+---
+
+# 162. USER INTERRUPT
+
+Пользователь всегда должен иметь возможность:
+
+```text
+Pause
+Stop
+Cancel
+Change instruction
+```
+
+и это должно иметь высокий priority.
+
+---
+
+# 163. LIVE TASK MODIFICATION
+
+Пользователь может во время задачи сказать:
+
+> "Стоп, вместо этого положи файлы в другую папку."
+
+Agent должен:
+
+```text
+cancel obsolete plan
+preserve useful state
+create new plan
+continue
+```
+
+---
+
+# 164. TASK PRIORITIES
+
+Background tasks должны иметь priority:
+
+```text
+critical
+high
+normal
+low
+```
+
+Foreground user request получает приоритет над background tasks.
+
+---
+
+# 165. SCHEDULER RESOURCE AWARENESS
+
+Scheduler не должен запускать 20 тяжёлых AI tasks одновременно.
+
+Учитывать:
+
+* CPU;
+* RAM;
+* GPU;
+* network;
+* model rate limits.
+
+---
+
+# 166. BATTERY AWARENESS
+
+На ноутбуках учитывать:
+
+* battery state;
+* AC/battery;
+* power saver.
+
+Не выполнять тяжёлые background tasks на батарее без разрешения пользователя.
+
+---
+
+# 167. THERMAL AWARENESS
+
+Если OS предоставляет информацию о power/thermal state:
+
+учитывать её для тяжёлых local AI tasks.
+
+---
+
+# 168. APPLICATION LIFECYCLE
+
+Приложение должно корректно обрабатывать:
+
+```text
+launch
+startup
+background
+sleep
+wake
+lock
+unlock
+shutdown
+restart
+update
+```
+
+---
+
+# 169. WINDOWS SESSION EVENTS
+
+Учитывать:
+
+* logon;
+* logoff;
+* lock;
+* unlock;
+* suspend;
+* resume;
+* shutdown.
+
+---
+
+# 170. NOTIFICATION CENTER
+
+Создать внутренний notification/event center.
+
+Пользователь должен видеть:
+
+* completed tasks;
+* failed tasks;
+* confirmations;
+* warnings;
+* updates.
+
+---
+
+# 171. COMMAND PALETTE
+
+Добавить универсальный command palette.
+
+Например:
+
+```text
+Ctrl+K
+```
+
+Позволяет:
+
+* new task;
+* open settings;
+* switch model;
+* change mode;
+* view tasks;
+* search memory;
+* run action;
+* manage integrations.
+
+---
+
+# 172. GLOBAL HOTKEYS
+
+Поддержать configurable global shortcuts для:
+
+* open app;
+* voice mode;
+* quick task;
+* pause;
+* stop.
+
+---
+
+# 173. QUICK ACTIONS
+
+Пользователь должен иметь быстрые действия:
+
+```text
+Open Chrome
+Take screenshot
+Diagnose PC
+Find files
+Ask AI
+Voice command
+```
+
+Но quick actions должны использовать deterministic execution там, где возможно.
+
+---
+
+# 174. SEARCH EVERYTHING
+
+Добавить глобальный search по:
+
+* tasks;
+* memory;
+* settings;
+* commands;
+* logs;
+* integrations.
+
+---
+
+# 175. COMMAND HISTORY
+
+Хранить историю пользовательских задач с возможностью:
+
+* повторить;
+* изменить;
+* удалить;
+* pin;
+* search.
+
+---
+
+# 176. TASK TEMPLATES
+
+Пользователь может сохранить:
+
+> "Каждый раз делай X"
+
+как reusable task/template.
+
+---
+
+# 177. AUTOMATION BUILDER
+
+В будущем пользователь должен иметь возможность визуально создавать:
+
+```text
+Trigger
+ ↓
+Condition
+ ↓
+Action
+ ↓
+Verification
+ ↓
+Notification
+```
+
+Например:
+
+```text
+New PDF
+ ↓
+Extract text
+ ↓
+Rename
+ ↓
+Move
+ ↓
+Notify
+```
+
+---
+
+# 178. AUTOMATION SAFETY
+
+Автоматизации не должны неожиданно получить новые permissions после обновления.
+
+Если automation начинает требовать новые permissions:
+
+→ запросить пользователя.
+
+---
+
+# 179. EXTENSION SECURITY
+
+Third-party extensions должны иметь:
+
+* permissions;
+* isolation;
+* signing/trust;
+* version;
+* source;
+* uninstall.
+
+---
+
+# 180. FEATURE FLAGS
+
+Использовать feature flags для:
+
+* experimental features;
+* beta AI providers;
+* new UI;
+* new agent strategies.
+
+---
+
+# 181. SAFE ROLLOUT
+
+Если приложение получает обновление:
+
+новые risky features можно включать постепенно.
+
+---
+
+# 182. TELEMETRY
+
+Если добавляется telemetry:
+
+она должна быть:
+
+* opt-in или соответствовать выбранной privacy policy;
+* минимальной;
+* anonymized;
+* без содержимого пользовательских файлов;
+* без API keys;
+* без passwords;
+* без screenshots;
+* без raw prompts без явного согласия.
+
+---
+
+# 183. PERFORMANCE TELEMETRY
+
+Можно собирать:
+
+```text
+startup_ms
+task_latency
+tool_latency
+model_latency
+crash_count
+memory_usage
+```
+
+без пользовательского контента.
+
+---
+
+# 184. CRASH REPORTING
+
+Добавить production crash reporting architecture.
+
+Crash report должен помогать определить:
+
+* component;
+* version;
+* OS;
+* stack;
+* error;
+* build.
+
+Но не содержать секретные пользовательские данные.
+
+---
+
+# 185. ERROR IDs
+
+Каждой production error выдавать machine-readable ID.
+
+Например:
+
+```text
+AGENT-BROWSER-0042
+```
+
+Это упрощает поддержку.
+
+---
+
+# 186. SUPPORT MODE
+
+Добавить:
+
+> Export diagnostics
+
+который создаёт sanitized report:
+
+* version;
+* OS;
+* capabilities;
+* recent errors;
+* performance metrics;
+* provider status.
+
+Без секретов.
+
+---
+
+# 187. PRODUCT ANALYTICS
+
+Если пользователь согласился на analytics:
+
+измерять product-level metrics:
+
+* feature usage;
+* task completion;
+* crashes;
+* latency.
+
+Не собирать содержимое пользовательских задач без явного consent.
+
+---
+
+# 188. ACCESSIBILITY TREE FIRST
+
+Для Windows GUI automation максимально использовать UI Automation.
+
+Не пытаться "смотреть глазами" на интерфейс, если ОС уже предоставляет:
+
+* element name;
+* role;
+* state;
+* bounds;
+* action.
+
+---
+
+# 189. COMPUTER VISION FALLBACK
+
+Vision должен быть интеллектуальным fallback.
+
+Например:
+
+```text
+Can UI Automation identify button?
+YES → click exact element
+
+NO
+
+Can OCR identify text?
+YES → target text
+
+NO
+
+Can Vision identify semantic target?
+YES → estimate location
+
+NO
+
+Ask user
+```
+
+---
+
+# 190. ACTION VERIFICATION
+
+После GUI action обязательно проверять результат.
+
+Например:
+
+```text
+click Save
+ ↓
+verify dialog changed / file exists / state changed
+```
+
+Не считать click успешным только потому, что mouse event отправился.
+
+---
+
+# 191. SCREEN STATE CACHE
+
+Хранить semantic representation текущего экрана.
+
+Если экран не изменился:
+
+не выполнять полный Vision analysis заново.
+
+---
+
+# 192. BROWSER STATE CACHE
+
+Не отправлять модели DOM целиком после каждого действия.
+
+Использовать incremental changes.
+
+---
+
+# 193. TOOL OUTPUT NORMALIZATION
+
+Все tools должны возвращать структурированный результат:
+
+```json
+{
+  "success": true,
+  "data": {},
+  "error": null,
+  "metadata": {},
+  "duration_ms": 12
+}
+```
+
+Не передавать модели гигантский raw stdout, если нужен только relevant result.
+
+---
+
+# 194. OUTPUT SUMMARIZATION
+
+Большие tool outputs:
+
+```text
+10,000 lines
+```
+
+должны быть автоматически:
+
+* truncated intelligently;
+* searched;
+* summarized;
+* filtered.
+
+Не отправлять 10 MB terminal output в LLM.
+
+---
+
+# 195. LARGE FILE HANDLING
+
+Для больших файлов:
+
+* streaming;
+* chunking;
+* mmap where appropriate;
+* incremental processing.
+
+Не загружать гигантский файл целиком в RAM без необходимости.
+
+---
+
+# 196. TEMPORARY FILE MANAGEMENT
+
+Все temp files:
+
+* уникальные;
+* tracked;
+* cleaned;
+* recoverable where required.
+
+После crash должен существовать cleanup/recovery mechanism.
+
+---
+
+# 197. FILE LOCK HANDLING
+
+Корректно обрабатывать:
+
+* file in use;
+* permissions;
+* network drive;
+* OneDrive/Dropbox syncing;
+* antivirus locks.
+
+Не считать файл отсутствующим только потому, что он временно locked.
+
+---
+
+# 198. CLOUD-SYNC AWARENESS
+
+Если файл находится в:
+
+* OneDrive;
+* Dropbox;
+* Google Drive;
+
+учитывать:
+
+* online/offline;
+* sync status;
+* placeholders.
+
+---
+
+# 199. NETWORK DRIVE SUPPORT
+
+Filesystem tools должны корректно работать с UNC/network paths там, где это поддерживается.
+
+---
+
+# 200. PATH NORMALIZATION
+
+Единый path abstraction.
+
+Корректно работать с:
+
+* Unicode;
+* spaces;
+* long paths;
+* UNC;
+* symlinks;
+* junctions.
+
+---
+
+# 201. WINDOWS LONG PATHS
+
+Поддержать long paths, если OS/configuration позволяет.
+
+---
+
+# 202. PROCESS SECURITY
+
+Перед kill/modify process:
+
+* проверить identity;
+* PID;
+* executable;
+* permissions.
+
+Не убивать новый процесс, если PID был reused.
+
+---
+
+# 203. RACE CONDITION PROTECTION
+
+Например:
+
+```text
+find process PID 100
+...
+kill PID 100
+```
+
+между этими действиями процесс может измениться.
+
+Использовать verification.
+
+---
+
+# 204. IDE / DEVELOPER MODE
+
+Добавить developer mode:
+
+* inspect tools;
+* inspect events;
+* inspect model requests;
+* latency;
+* state;
+* logs;
+* permissions.
+
+Но скрывать API keys/secrets.
+
+---
+
+# 205. MODEL DEBUGGER
+
+Developer mode должен показывать:
+
+```text
+model
+latency
+tokens
+tools offered
+tool chosen
+result size
+retry
+```
+
+Но не раскрывать sensitive data без необходимости.
+
+---
+
+# 206. TOOL DEBUGGER
+
+Позволить разработчику вручную выполнить tool с validated schema.
+
+---
+
+# 207. EVENT REPLAY
+
+Добавить возможность replay event/task history в тестовой среде.
+
+Это сильно упростит debugging сложных agent failures.
+
+---
+
+# 208. TASK RECORDING
+
+Для debugging можно сохранять sanitized execution trace:
+
+```text
+goal
+strategy
+tools
+results
+verification
+errors
+```
+
+без секретов.
+
+---
+
+# 209. REPRODUCIBILITY
+
+Bug report должен по возможности позволять воспроизвести:
+
+```text
+version
+OS
+tool sequence
+provider
+model
+configuration
+```
+
+без сохранения sensitive content.
+
+---
+
+# 210. DEPENDENCY SECURITY
+
+Регулярно проверять dependencies на:
+
+* known vulnerabilities;
+* abandoned packages;
+* suspicious packages;
+* license incompatibility.
+
+---
+
+# 211. SUPPLY CHAIN SECURITY
+
+Build system должен быть защищён от:
+
+* dependency confusion;
+* malicious package;
+* unsigned artifact;
+* compromised update.
+
+---
+
+# 212. SIGNED BUILDS
+
+Production binaries должны быть подготовлены к code signing.
+
+Installer и executable должны иметь доверенную подпись в production distribution.
+
+---
+
+# 213. BUILD REPRODUCIBILITY
+
+По возможности сделать deterministic/reproducible builds.
+
+---
+
+# 214. RELEASE CHANNELS
+
+Поддержать:
+
+```text
+stable
+beta
+nightly/internal
+```
+
+---
+
+# 215. ROLLBACK
+
+Если update ломает приложение:
+
+```text
+detect failure
+ ↓
+rollback
+ ↓
+restore previous version
+```
+
+---
+
+# 216. DATABASE DESIGN
+
+Если используется database:
+
+* migrations;
+* indexes;
+* transactions;
+* WAL where appropriate;
+* backups;
+* corruption recovery.
+
+Не выполнять тяжёлые queries на UI thread.
+
+---
+
+# 217. SEARCH INDEX
+
+Если нужен глобальный поиск:
+
+использовать специализированный индекс вместо полного сканирования всех данных при каждом запросе.
+
+---
+
+# 218. EMBEDDINGS / SEMANTIC SEARCH
+
+Если semantic memory/search реализуется:
+
+не добавлять vector database просто ради модного слова.
+
+Использовать embeddings только там, где они реально улучшают retrieval.
+
+Для маленьких datasets обычный search может быть быстрее и проще.
+
+---
+
+# 219. MEMORY QUALITY
+
+Не сохранять в long-term memory:
+
+* случайные фразы;
+* временные данные;
+* секреты;
+* одноразовые инструкции.
+
+Memory должна иметь quality threshold.
+
+---
+
+# 220. MEMORY CONFIDENCE
+
+Каждая сохранённая preference/fact должна иметь confidence.
+
+Не превращать предположение AI в permanent user fact.
+
+---
+
+# 221. USER CONTROL OF MEMORY
+
+Пользователь должен иметь возможность:
+
+> "Почему ты это запомнил?"
+
+и:
+
+> "Забудь это."
+
+---
+
+# 222. AGENT PERSONALITY
+
+Personality должна быть отделена от:
+
+* safety;
+* tool policy;
+* system architecture.
+
+Изменение personality не должно менять security behavior.
+
+---
+
+# 223. SYSTEM PROMPT SECURITY
+
+Пользовательская настройка personality не должна позволять пользователю/модели отключить safety policy.
+
+---
+
+# 224. MULTI-MODAL ARCHITECTURE
+
+В будущем архитектура должна позволять:
+
+```text
+text
+image
+audio
+screen
+files
+browser
+structured data
+```
+
+без переписывания Agent Core.
+
+---
+
+# 225. AUDIO ARCHITECTURE
+
+STT/TTS должны быть provider-agnostic:
+
+```text
+AudioProvider
+ ├── Local
+ ├── Cloud
+ └── Custom
+```
+
+---
+
+# 226. STREAMING EVERYWHERE
+
+Где возможно использовать streaming:
+
+* LLM;
+* TTS;
+* STT;
+* browser downloads;
+* terminal output;
+* large files;
+* task progress.
+
+---
+
+# 227. BACKPRESSURE
+
+Если UI не успевает обработать тысячи events:
+
+не создавать бесконечную очередь.
+
+Использовать:
+
+* coalescing;
+* throttling;
+* backpressure;
+* sampling.
+
+---
+
+# 228. UI EVENT OPTIMIZATION
+
+Не отправлять 60 screenshot updates/sec, если пользователю достаточно 5–10.
+
+Не обновлять DOM/UI при каждом внутреннем token, если это создаёт lag.
+
+---
+
+# 229. ANIMATION PERFORMANCE
+
+UI animations должны:
+
+* не блокировать;
+* respect reduced motion;
+* не потреблять чрезмерный CPU/GPU.
+
+---
+
+# 230. STARTUP EXPERIENCE
+
+Пользователь должен видеть:
+
+```text
+Launching...
+Initializing...
+Ready
+```
+
+а не зависшее окно на несколько секунд.
+
+---
+
+# 231. FIRST-RUN EXPERIENCE
+
+При первом запуске:
+
+* explain product;
+* choose provider;
+* configure API;
+* test model;
+* permissions;
+* voice optional;
+* privacy;
+* finish.
+
+Не заставлять пользователя редактировать JSON.
+
+---
+
+# 232. ONBOARDING
+
+Onboarding должен быть коротким.
+
+Цель:
+
+> пользователь должен выполнить первую полезную задачу за несколько минут.
+
+---
+
+# 233. DEMO MODE
+
+Можно оставить demo mode, но он должен быть явно обозначен как demo.
+
+Никогда не выдавать simulated result за реальное действие.
+
+---
+
+# 234. EMPTY STATES
+
+Каждый раздел UI должен иметь нормальный empty state:
+
+* Tasks;
+* Memory;
+* History;
+* Automations;
+* Integrations.
+
+---
+
+# 235. LOADING STATES
+
+Не использовать просто spinner везде.
+
+Показывать meaningful state:
+
+> Connecting to model…
+
+> Loading browser…
+
+> Analyzing screen…
+
+> Searching files…
+
+---
+
+# 236. OFFLINE UX
+
+Если интернета нет:
+
+UI должен явно показывать:
+
+```text
+Offline
+```
+
+и доступные local capabilities.
+
+---
+
+# 237. PROVIDER STATUS CENTER
+
+Отдельный экран:
+
+```text
+OpenAI       Connected
+Groq         Connected
+Mistral      Invalid key
+Ollama       Offline
+```
+
+---
+
+# 238. INTEGRATION CENTER
+
+Отдельный раздел:
+
+```text
+AI Providers
+Browser
+GitHub
+Cloud storage
+Communication
+Developer tools
+```
+
+Каждая integration имеет:
+
+* status;
+* permissions;
+* reconnect;
+* disconnect;
+* configuration.
+
+---
+
+# 239. OAUTH SECURITY
+
+OAuth tokens никогда не должны попадать:
+
+* в logs;
+* prompts;
+* screenshots;
+* diagnostics.
+
+---
+
+# 240. USER PROFILE
+
+Если коммерческая версия имеет account system:
+
+отделить:
+
+```text
+local machine identity
+user account
+subscription
+device
+```
+
+Не связывать их неявно.
+
+---
+
+# 241. LICENSE FAILURE UX
+
+Если подписка истекла:
+
+не просто:
+
+> ERROR
+
+А нормальный UX:
+
+```text
+Subscription inactive
+
+Your existing local data remains available.
+
+[Manage subscription]
+[Continue offline if allowed]
+[Sign in]
+```
+
+---
+
+# 242. LICENSE SERVER FAILURE
+
+Если license server временно недоступен:
+
+не блокировать пользователя мгновенно, если действует offline grace period.
+
+---
+
+# 243. ANTI-PIRACY PRINCIPLE
+
+Не пытаться сделать невозможным reverse engineering.
+
+Цель:
+
+* подписанная лицензия;
+* secure server validation;
+* short-lived authorization;
+* device binding;
+* integrity protection;
+* binary hardening;
+* минимизация secrets в client.
+
+Критические server-side secrets никогда не находятся в desktop application.
+
+---
+
+# 244. COMMERCIAL SUPPORTABILITY
+
+Каждая production installation должна иметь:
+
+```text
+version
+build
+channel
+OS
+architecture
+```
+
+чтобы support мог быстро определить environment.
+
+---
+
+# 245. FEATURE AVAILABILITY
+
+UI должен скрывать или объяснять unavailable capabilities.
+
+Не показывать пользователю кнопку Vision, если текущая модель не поддерживает Vision, если только это не configuration action.
+
+---
+
+# 246. SMART DEGRADATION
+
+Если feature недоступна:
+
+агент должен искать альтернативу.
+
+Например:
+
+```text
+Vision unavailable
+→ OCR
+
+OCR unavailable
+→ accessibility
+
+Browser unavailable
+→ direct HTTP if appropriate
+
+Cloud model unavailable
+→ local model if configured
+```
+
+---
+
+# 247. NO SILENT DATA LOSS
+
+Никогда не удалять/перезаписывать пользовательские данные молча.
+
+---
+
+# 248. TRANSACTIONAL FILE OPERATIONS
+
+Для сложных массовых операций:
+
+```text
+Analyze
+ ↓
+Preview
+ ↓
+Confirm if required
+ ↓
+Execute
+ ↓
+Verify
+ ↓
+Commit
+```
+
+---
+
+# 249. DRY RUN
+
+Для опасных операций поддержать:
+
+> Preview / Dry Run
+
+Например:
+
+> "Что именно ты собираешься удалить?"
+
+и показать список.
+
+---
+
+# 250. BULK OPERATION PROGRESS
+
+Для 10,000 файлов:
+
+* progress;
+* current item;
+* success count;
+* failed count;
+* remaining;
+* cancel.
+
+---
+
+# 251. PARTIAL FAILURE
+
+Если 999/1000 файлов обработаны:
+
+не считать всю задачу просто failed.
+
+Показать:
+
+```text
+999 succeeded
+1 failed
+```
+
+и предложить retry failed items.
+
+---
+
+# 252. IDE / CODE OPERATIONS
+
+Для developer workflows агент должен уметь:
+
+* detect project type;
+* detect package manager;
+* detect runtime;
+* install dependencies;
+* run tests;
+* inspect logs;
+* inspect compiler errors;
+* modify files;
+* rerun;
+* verify.
+
+Не предполагать Python/npm/etc. без проверки проекта.
+
+---
+
+# 253. PROJECT DETECTION
+
+Определять:
+
+```text
+package.json
+pyproject.toml
+Cargo.toml
+CMakeLists.txt
+.sln
+.csproj
+go.mod
+pom.xml
+gradle
+```
+
+и другие ecosystem markers.
+
+---
+
+# 254. DEVELOPMENT SAFETY
+
+Перед массовыми изменениями кода:
+
+* detect Git repository;
+* check status;
+* optionally create checkpoint/branch where appropriate.
+
+---
+
+# 255. CODE MODIFICATION
+
+Для больших code changes:
+
+```text
+inspect
+plan
+edit
+format
+lint
+test
+verify
+```
+
+Не менять код вслепую.
+
+---
+
+# 256. TERMINAL OUTPUT INTELLIGENCE
+
+Если build/test возвращает 20,000 строк:
+
+агент должен извлечь:
+
+* errors;
+* warnings;
+* relevant context;
+* failed tests.
+
+Не отправлять весь output модели.
+
+---
+
+# 257. SYSTEM DIAGNOSTICS
+
+"Почему компьютер тормозит?" должно быть полноценной диагностической системой.
+
+Проверять:
+
+```text
+CPU
+RAM
+Disk
+GPU
+Processes
+Startup
+Thermal/power where available
+Network
+Disk health where available
+```
+
+и затем reasoning.
+
+---
+
+# 258. DIAGNOSTIC EVIDENCE
+
+Каждая рекомендация должна быть основана на collected evidence.
+
+Не:
+
+> "Наверное, у вас мало RAM."
+
+а:
+
+> "Процесс X использует Y GB RAM..."
+
+---
+
+# 259. EXPLANATION QUALITY
+
+Финальный ответ должен разделять:
+
+```text
+What I found
+What I did
+What changed
+What remains
+```
+
+---
+
+# 260. TASK FINALIZATION
+
+Задача считается completed только если:
+
+```text
+Goal understood
++
+Required actions completed
++
+Expected state verified
+```
+
+---
+
+# 261. PARTIAL COMPLETION
+
+Если выполнить всё невозможно:
+
+агент должен сообщить:
+
+```text
+Completed
+Failed
+Blocked
+Remaining
+Reason
+```
+
+а не говорить:
+
+> Done
+
+---
+
+# 262. HUMAN-IN-THE-LOOP
+
+Пользователь должен оставаться ultimate authority.
+
+Особенно для:
+
+* irreversible actions;
+* secrets;
+* payments;
+* account changes;
+* security changes;
+* destructive operations.
+
+---
+
+# 263. CONFIRMATION MEMORY
+
+Если пользователь постоянно разрешает определённую безопасную операцию, система может предложить:
+
+> Always allow this action?
+
+Но это должно быть explicit user choice.
+
+---
+
+# 264. PERMISSION SCOPING
+
+Разрешение должно быть максимально узким:
+
+```text
+Allow deleting files in Downloads
+```
+
+вместо:
+
+```text
+Allow filesystem
+```
+
+если это возможно.
+
+---
+
+# 265. SECURITY AUDIT MODE
+
+Создать отдельный internal audit checklist.
+
+Проверять:
+
+* injection;
+* privilege escalation;
+* secrets;
+* IPC;
+* extensions;
+* updates;
+* license;
+* browser;
+* shell;
+* filesystem.
+
+---
+
+# 266. RELEASE CHECKLIST
+
+Перед production release:
+
+```text
+[ ] Tests
+[ ] Security
+[ ] Performance
+[ ] Installer
+[ ] Uninstaller
+[ ] Update
+[ ] Rollback
+[ ] License
+[ ] Provider APIs
+[ ] Vision
+[ ] Voice
+[ ] Browser
+[ ] Windows
+[ ] High DPI
+[ ] Multi-monitor
+[ ] Crash recovery
+[ ] Privacy
+[ ] Documentation
+```
+
+---
+
+# 267. PRODUCT QUALITY BAR
+
+Каждое решение оценивай вопросом:
+
+> "Можно ли было бы выпустить это как коммерческий продукт?"
+
+Если ответ:
+
+> "Нет, это временный костыль"
+
+то решение необходимо переработать.
+
+---
+
+# 268. NO PROTOTYPE LANGUAGE
+
+В production code не оставлять:
+
+```text
+temporary
+hack
+quick fix
+TODO
+later
+demo
+test implementation
+```
+
+без явно зарегистрированной причины.
+
+---
+
+# 269. TECHNICAL DEBT REGISTER
+
+Если что-то действительно невозможно исправить сейчас:
+
+создай:
+
+```text
+TECHNICAL_DEBT.md
+```
+
+с:
+
+* issue;
+* reason;
+* impact;
+* priority;
+* planned solution.
+
+Не скрывать технический долг.
+
+---
+
+# 270. ARCHITECTURE REVIEW
+
+После реализации повторно проверь архитектуру.
+
+Задай себе:
+
+* Есть ли circular dependencies?
+* Есть ли god objects?
+* Есть ли unnecessary IPC?
+* Есть ли unnecessary LLM calls?
+* Есть ли blocking operations?
+* Есть ли security bypass?
+* Есть ли single points of failure?
+* Можно ли заменить дорогую операцию deterministic implementation?
+* Можно ли упростить subsystem?
+
+---
+
+# 271. SECOND PASS OPTIMIZATION
+
+После того как всё работает:
+
+**не заканчивай работу.**
+
+Сделай второй проход:
+
+```text
+measure
+ ↓
+profile
+ ↓
+find bottlenecks
+ ↓
+optimize
+ ↓
+measure again
+```
+
+---
+
+# 272. PROFILE EVERYTHING IMPORTANT
+
+Использовать реальные profilers для:
+
+* CPU;
+* memory;
+* startup;
+* network;
+* UI;
+* database;
+* browser;
+* agent loop.
+
+Не оптимизировать на ощущениях.
+
+---
+
+# 273. MEMORY LEAK TESTING
+
+Оставить приложение работать:
+
+```text
+1 hour
+8 hours
+24 hours
+```
+
+с повторяющимися tasks.
+
+Проверить:
+
+* RAM growth;
+* thread growth;
+* handles;
+* processes;
+* browser contexts;
+* temp files.
+
+---
+
+# 274. LONG-RUN STABILITY
+
+Agent должен выдерживать:
+
+* long-running tasks;
+* many sequential tasks;
+* background automation.
+
+---
+
+# 275. STRESS TEST
+
+Проверить:
+
+```text
+100 tasks
+1000 files
+many browser tabs
+large logs
+large files
+multiple providers
+multiple monitors
+```
+
+---
+
+# 276. CONCURRENCY TESTING
+
+Проверить race conditions при:
+
+* multiple tasks;
+* stop/resume;
+* browser actions;
+* scheduler;
+* UI interaction.
+
+---
+
+# 277. SECURITY VS PERFORMANCE
+
+Безопасность не должна означать:
+
+> каждый click → 500 ms security check.
+
+Использовать правильные архитектурные boundaries и caching.
+
+---
+
+# 278. PRODUCT MODES
+
+Рассмотреть режимы:
+
+```text
+Auto
+Confirm
+Step
+Observe
+Plan
+Voice
+Background
+Developer
+```
+
+Каждый режим должен реально менять behavior, а не только UI label.
+
+---
+
+# 279. AUTO MODE
+
+Автономность высокая.
+
+Но:
+
+```text
+critical
+irreversible
+massive destructive
+security-sensitive
+```
+
+действия всё равно требуют policy/confirmation согласно настройкам.
+
+---
+
+# 280. PLAN MODE
+
+Агент:
+
+* анализирует;
+* собирает контекст;
+* строит план;
+
+но не выполняет действия.
+
+План должен быть понятным пользователю.
+
+---
+
+# 281. STEP MODE
+
+Каждое действие:
+
+```text
+planned
+→ show
+→ approve
+→ execute
+→ verify
+```
+
+---
+
+# 282. OBSERVE MODE
+
+Пользователь видит процесс в реальном времени, но не должен быть перегружен техническими деталями.
+
+---
+
+# 283. VOICE MODE
+
+Voice Mode должен позволять полноценный разговор:
+
+```text
+user speaks
+→ STT
+→ agent
+→ action
+→ spoken response
+```
+
+с interruption/barge-in.
+
+---
+
+# 284. BACKGROUND MODE
+
+Задача продолжает работать при закрытом главном окне, если это разрешено.
+
+---
+
+# 285. SYSTEM TRAY
+
+Рассмотреть tray application architecture:
+
+* running tasks;
+* notifications;
+* pause;
+* stop;
+* open application;
+* voice activation.
+
+---
+
+# 286. WINDOW STATES
+
+Сохранять:
+
+* window position;
+* size;
+* monitor;
+* maximized state.
+
+Но корректно восстанавливать после отключения монитора.
+
+---
+
+# 287. DISPLAY HOTPLUG
+
+Если monitor отключился:
+
+не потерять окно за пределами доступного desktop.
+
+---
+
+# 288. FONT / SCALE
+
+Все размеры должны корректно работать при Windows scaling.
+
+---
+
+# 289. LOCALIZATION ARCHITECTURE
+
+Не хранить строки:
+
+```text
+if language == ...
+```
+
+по всему проекту.
+
+Использовать localization layer.
+
+---
+
+# 290. RTL PREPARATION
+
+Даже если RTL пока не поддерживается, архитектура UI не должна делать это невозможным.
+
+---
+
+# 291. ERROR RECOVERY PHILOSOPHY
+
+Ошибка должна превращаться в:
+
+```text
+understand
+recover
+retry
+fallback
+ask
+```
+
+а не:
+
+```text
+exception
+crash
+```
+
+---
+
+# 292. AGENT LEARNING
+
+Не давать модели бесконтрольно "обучаться" на пользовательских данных.
+
+Если добавляется adaptive behavior:
+
+он должен быть:
+
+* explicit;
+* inspectable;
+* reversible.
+
+---
+
+# 293. STRATEGY MEMORY
+
+Можно сохранять успешные execution strategies.
+
+Например:
+
+```text
+For this application:
+native API works better than Vision.
+```
+
+Но strategy memory должна быть versioned и invalidatable.
+
+---
+
+# 294. TOOL PERFORMANCE MEMORY
+
+Agent может знать:
+
+```text
+PowerShell operation X → 10ms
+Vision operation X → 1200ms
+```
+
+и использовать это для routing.
+
+Но не жертвовать correctness ради latency.
+
+---
+
+# 295. SELF-OPTIMIZING ROUTER
+
+В будущем router может выбирать execution strategy на основе:
+
+```text
+correctness
+latency
+cost
+reliability
+risk
+```
+
+---
+
+# 296. NO BLIND AUTONOMY
+
+Самостоятельность агента означает:
+
+> самостоятельно выбирать хороший способ решения.
+
+Не означает:
+
+> самостоятельно получать доступ ко всему.
+
+---
+
+# 297. FINAL PRINCIPLE
+
+**Если можешь сделать операцию за 1 ms без AI — не делай её за 2 секунды через AI.**
+
+**Если можешь получить точный state через API — не угадывай его через Vision.**
+
+**Если можешь проверить результат программно — не спрашивай LLM, получилось ли.**
+
+**Если можно выполнить действия параллельно — не выполняй их последовательно.**
+
+**Если можно избежать network request — избегай его.**
+
+**Если можно избежать запуска тяжёлого subsystem — не запускай его.**
+
+**Если можно обнаружить ошибку автоматически — обнаруживай её автоматически.**
+
+**Если можно восстановиться автоматически — восстанавливайся автоматически.**
+
+---
+
+# 298. FINAL ENGINEERING STANDARD
+
+Оценивай продукт по принципу:
+
+```text
+Fast
++
+Correct
++
+Reliable
++
+Secure
++
+Observable
++
+Maintainable
++
+Beautiful
++
+Extensible
+```
+
+Если отсутствует хотя бы один из этих элементов, работа над соответствующей частью ещё не закончена.
+
+---
+
+# 299. И САМОЕ ГЛАВНОЕ
+
+Не воспринимай этот документ как полный список всех возможных требований.
+
+Это **baseline**.
+
+Ты обязан самостоятельно находить:
+
+* отсутствующие subsystem'ы;
+* архитектурные проблемы;
+* security risks;
+* performance bottlenecks;
+* UX проблемы;
+* reliability problems;
+* missing production capabilities.
+
+Если понимаешь, что для продукта уровня настоящего коммерческого software необходимо что-то ещё:
+
+**добавь это самостоятельно.**
+
+Не жди, пока пользователь перечислит каждую мелочь.
+
+Ты отвечаешь за конечное качество продукта, а не за буквальное выполнение списка.
+
+**Build the product that should exist — not merely the product described by the current codebase.**
+# 300. AUTONOMOUS ENGINEERING DECISION-MAKING — CRITICAL
+
+Это одно из главных правил всей работы.
+
+**Ты НЕ обязан буквально следовать каждому техническому решению, предложенному в этом prompt.**
+
+Этот prompt описывает **цели, требования к качеству и ожидаемые свойства конечного продукта**, а не запрещает тебе принимать собственные инженерные решения.
+
+Если ты считаешь, что существует решение, которое:
+
+* быстрее;
+* надёжнее;
+* безопаснее;
+* дешевле в эксплуатации;
+* проще поддерживать;
+* масштабируется лучше;
+* лучше интегрируется с Windows;
+* лучше подходит для desktop;
+* лучше подходит для AI;
+* обеспечивает лучший UX;
+* уменьшает latency;
+* уменьшает memory usage;
+* уменьшает количество зависимостей;
+* делает архитектуру проще;
+* делает систему более расширяемой;
+* уменьшает количество потенциальных багов;
+* лучше соответствует production requirements;
+
+**ты обязан рассмотреть это решение и можешь выбрать его, даже если оно прямо не описано в prompt.**
+
+Не воспринимай мои примеры технологий как обязательные.
+
+Например, если я упоминаю:
+
+```text
+Rust
+C++
+PowerShell
+Playwright
+SQLite
+Tauri
+Qt
+WebView
+```
+
+это не означает:
+
+> «обязательно используй именно это».
+
+Это означает:
+
+> «рассмотри наиболее подходящее решение».
+
+Если ты находишь технологию или архитектуру лучше — **используй её**.
+
+---
+
+## НЕ БОЙСЯ ПРОТИВОРЕЧИТЬ ПРЕДЛОЖЕННОМУ ПОДХОДУ
+
+Если во время аудита ты обнаружишь, что предложенная мной идея:
+
+* технически неоптимальна;
+* создаёт bottleneck;
+* создаёт security risk;
+* усложняет архитектуру;
+* ухудшает UX;
+* увеличивает latency;
+* создаёт ненужную dependency;
+* плохо масштабируется;
+
+**не реализуй её просто потому, что она была упомянута пользователем.**
+
+Замени её на лучшее решение.
+
+---
+
+## ПРИОРИТЕТЫ ПРИНЯТИЯ РЕШЕНИЙ
+
+Если существует несколько вариантов, оценивай их примерно в таком порядке:
+
+```text
+1. Security
+2. Correctness
+3. Reliability
+4. User data safety
+5. Performance
+6. UX
+7. Maintainability
+8. Scalability
+9. Extensibility
+10. Development convenience
+```
+
+Но не превращай этот список в механическую формулу.
+
+Используй инженерное суждение.
+
+---
+
+## ЕСЛИ НАШЁЛ ЗНАЧИТЕЛЬНО ЛУЧШИЙ ПУТЬ
+
+Не нужно останавливать работу и спрашивать:
+
+> «Можно ли мне сделать иначе?»
+
+Если изменение:
+
+* не нарушает пользовательскую цель;
+* не нарушает security;
+* не уничтожает необходимую функциональность;
+* объективно улучшает конечный продукт;
+
+**принимай решение самостоятельно и продолжай работу.**
+
+---
+
+## ПРИМЕР
+
+Если текущая архитектура:
+
+```text
+Python
+→ pywebview
+→ local HTTP server
+→ browser UI
+```
+
+и после анализа ты понимаешь, что для production Windows-приложения другая архитектура даст:
+
+* значительно меньший startup;
+* меньше RAM;
+* лучшую интеграцию с Windows;
+* лучшую responsiveness;
+* более качественный installer;
+
+ты **имеешь право полностью заменить desktop architecture**.
+
+---
+
+## ЕЩЁ ОДИН ПРИМЕР
+
+Если пользовательская задача:
+
+> «Открой Chrome»
+
+и существующий agent pipeline хочет:
+
+```text
+LLM
+→ planner
+→ tool call
+→ PowerShell
+→ Chrome
+```
+
+а ты можешь определить intent локально:
+
+```text
+intent resolver
+→ native Windows launch
+```
+
+используй второй вариант.
+
+Не используй AI только потому, что приложение является AI-agent.
+
+---
+
+## ЕЩЁ ОДИН ПРИМЕР
+
+Если пользователь хочет:
+
+> «Найди все PDF в папке».
+
+Не заставляй LLM анализировать filesystem.
+
+Используй:
+
+```text
+native filesystem search
+→ results
+```
+
+и подключай LLM только если требуется дополнительное reasoning.
+
+---
+
+## САМОСТОЯТЕЛЬНО ДОБАВЛЯЙ НЕОБХОДИМЫЕ КОМПОНЕНТЫ
+
+Если во время архитектурного анализа обнаружится, что для production-продукта необходим компонент, которого нет в текущем проекте и нет в этом prompt:
+
+**создай его.**
+
+Не жди отдельного указания пользователя.
+
+Это может быть:
+
+* service layer;
+* IPC;
+* plugin system;
+* indexing engine;
+* permission engine;
+* credential vault;
+* cache;
+* crash recovery;
+* update system;
+* telemetry;
+* evaluation framework;
+* model router;
+* context engine;
+* sandbox;
+* background service;
+* migration system;
+* diagnostics;
+* anything else required by the architecture.
+
+---
+
+## САМОСТОЯТЕЛЬНО УДАЛЯЙ НЕОБЯЗАТЕЛЬНОЕ
+
+То же относится к существующей функциональности.
+
+Если компонент:
+
+* не используется;
+* дублирует другой;
+* ухудшает производительность;
+* создаёт security risk;
+* архитектурно устарел;
+* больше не нужен;
+
+ты можешь его удалить после проверки зависимостей.
+
+Не сохраняй legacy code ради самого legacy code.
+
+---
+
+## НО НЕ ПУТАЙ АВТОНОМНОСТЬ С ХАОСОМ
+
+Самостоятельное принятие решений означает:
+
+> выбирать лучшее инженерное решение.
+
+Это **не означает**:
+
+> менять product requirements без причины.
+
+Не меняй пользовательскую цель.
+
+Не удаляй важную функциональность просто потому, что её сложно реализовать.
+
+Если изменение действительно меняет product behavior или важное пользовательское свойство, оцени последствия и сохрани совместимость там, где это разумно.
+
+---
+
+## КОРОЧЕ
+
+**Не спрашивай разрешения на хорошие инженерные решения.**
+
+**Не следуй плохой архитектуре только потому, что она существует.**
+
+**Не используй предложенную технологию только потому, что она упомянута.**
+
+**Не используй AI там, где deterministic code лучше.**
+
+**Не бойся переписывать subsystem.**
+
+**Не бойся отказаться от моего первоначального implementation approach.**
+
+**Твоя задача — сделать максимально качественный конечный продукт.**
+
+Если ты видишь способ сделать его существенно лучше — **делай лучше.**
+
+### 301. MODERN TECHNOLOGY REQUIREMENT — CRITICAL
+
+The existing Python implementation is a PROTOTYPE and MUST NOT be treated as the default technology stack for the production rewrite.
+
+**DO NOT simply continue developing the application in Python.**
+
+The goal is to rebuild the product using modern production-grade technologies appropriate for a high-performance commercial desktop application.
+
+### Primary technology direction
+
+The coding agent MUST seriously evaluate and preferentially use:
+
+**Rust**
+
+* Core application runtime
+* Agent orchestration
+* Tool execution engine
+* OS integration
+* Process management
+* Filesystem operations
+* IPC
+* Concurrency
+* Background workers
+* Security-critical components
+* Performance-critical subsystems
+
+**TypeScript**
+
+* Desktop UI
+* Frontend architecture
+* Application state
+* Settings
+* Command palette
+* Task management UI
+* Animations
+* Design system
+
+**React**
+
+* UI component architecture where appropriate.
+
+**Tauri 2**
+
+* Desktop application shell where appropriate.
+* Prefer it over Electron when it provides the required functionality with lower resource usage and better architecture.
+
+**C# / .NET**
+
+* May be used for Windows-specific subsystems where .NET/Windows APIs provide a superior implementation.
+* Use Windows-native APIs when appropriate.
+
+### Python policy
+
+Python MUST NOT be used as the primary application language.
+
+Python is permitted only for cases where it provides a concrete technical advantage, such as:
+
+* ML/AI experimentation;
+* specialized computer-vision components;
+* data science;
+* model tooling;
+* development scripts;
+* temporary migration tooling;
+* research/prototyping.
+
+A Python component must not be introduced merely because it is easier to implement.
+
+If a Python component becomes part of a critical runtime path, evaluate whether it should be replaced with Rust, C#, native code, or another appropriate production technology.
+
+### No "Python rewrite"
+
+The following is explicitly FORBIDDEN:
+
+Existing Python architecture
+→ refactor Python files
+→ add more Python modules
+→ wrap everything in classes
+→ call it the new architecture.
+
+That is NOT an acceptable production rewrite.
+
+The existing Python code should be treated primarily as:
+
+* behavioral reference;
+* prototype;
+* source of requirements;
+* source of existing tool semantics;
+* source of test cases where useful.
+
+The production architecture may be completely different.
+
+### Technology must follow subsystem requirements
+
+Do NOT force one language to do everything.
+
+A valid architecture may look like:
+
+Rust
+→ Core
+→ Agent Runtime
+→ Tool Engine
+→ OS Integration
+→ IPC
+→ Security
+→ Process Management
+
+TypeScript / React
+→ UI
+→ UX
+→ Settings
+→ Task Interface
+→ Command Palette
+→ Visualizations
+
+Tauri
+→ Desktop shell
+
+C# / .NET
+→ Windows-specific functionality where technically superior
+
+Python
+→ Optional isolated AI/ML tooling only where justified
+
+SQLite
+→ Local persistence
+
+Native Windows APIs
+→ Windows operations where appropriate
+
+### Performance requirement
+
+The final application must NOT behave like a Python application wrapped in a prettier UI.
+
+The architecture must target:
+
+* fast startup;
+* low idle RAM;
+* low CPU usage;
+* minimal unnecessary background work;
+* low action latency;
+* high concurrency;
+* reliable long-running operation;
+* fast filesystem operations;
+* fast process operations;
+* efficient IPC;
+* efficient screen/vision processing;
+* graceful failure and recovery.
+
+### Mandatory technology audit
+
+Before implementing the production architecture, analyze the current Python stack and identify:
+
+1. What should be replaced.
+2. What can remain temporarily.
+3. What must be rewritten.
+4. What should move to Rust.
+5. What should move to TypeScript/React.
+6. What should use native Windows APIs.
+7. What genuinely benefits from Python.
+
+Do not blindly preserve the current technology choices.
+
+### Final rule
+
+**Python is a legacy/prototype implementation detail, NOT the architectural foundation of the new product.**
+
+The agent is expected to build a modern high-performance desktop application, not endlessly improve the existing Python prototype.
+### 303. FINAL TECHNOLOGY BASELINE — DO NOT DEFAULT TO PYTHON
+
+For this production rebuild, the preferred architecture is:
+
+**Rust Core + C#/.NET WinUI 3 Desktop UI + Windows App SDK + SQLite + Playwright + ONNX Runtime**
+
+Use:
+
+* Rust for the core agent runtime and performance-critical/system functionality.
+* C#/.NET for the native Windows desktop UI.
+* WinUI 3 + Windows App SDK for the UI framework.
+* Windows APIs directly through Rust (`windows-rs`) or C# where appropriate.
+* SQLite for local persistence.
+* Playwright for deterministic browser automation.
+* ONNX Runtime and appropriate GPU acceleration for vision/inference.
+* Native Windows security facilities for credentials and secrets.
+* Typed local IPC between Core and UI.
+
+Python MUST NOT be the primary language of the application.
+
+Do not build the new product as a continuation of the existing Python prototype.
+
+### TECHNOLOGY AUTONOMY
+
+This technology stack is the **strong recommended baseline**, not an immutable restriction.
+
+The coding agent MUST independently validate the architecture before implementation.
+
+If it discovers a technology that is objectively superior for a specific subsystem, it is explicitly authorized to replace the corresponding technology.
+
+It may replace:
+
+* Rust;
+* C#;
+* WinUI 3;
+* Windows App SDK;
+* SQLite;
+* Playwright;
+* ONNX Runtime;
+* IPC technology;
+* any library;
+* any framework;
+* any subsystem architecture.
+
+However, such a replacement must have a concrete engineering justification based on measurable or technically defensible improvements in:
+
+* performance;
+* latency;
+* RAM;
+* CPU/GPU utilization;
+* reliability;
+* security;
+* Windows integration;
+* maintainability;
+* scalability;
+* deployment;
+* long-term support.
+
+Do NOT change technologies merely because another technology is easier to code.
+
+Do NOT choose Python simply because the existing prototype uses Python.
+
+Do NOT preserve the prototype architecture for compatibility.
+
+**The agent has permission to make better engineering decisions than this specification whenever the evidence supports them.**
+
+The goal is not to follow this technology list blindly.
+
+The goal is to produce the strongest production-grade implementation possible.
+
+If no objectively superior alternative is found, **use the specified baseline stack and proceed without asking the user for permission.**
+
