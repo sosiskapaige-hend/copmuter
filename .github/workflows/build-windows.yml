@@ -1,0 +1,62 @@
+name: Build Copmuter
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build C++ core
+        shell: cmd
+        run: native\build_windows.bat
+
+      - name: Restore .NET
+        run: dotnet restore shell\Copmuter.Agent\Copmuter.Agent.csproj
+
+      - name: Publish Windows app
+        run: >
+          dotnet publish shell\Copmuter.Agent\Copmuter.Agent.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          --no-restore
+          -p:WindowsAppSDKSelfContained=true
+          -p:Platform=x64
+          -o publish
+
+      - name: Copy AI files
+        shell: pwsh
+        run: |
+          Copy-Item -Recurse ai publish\ai
+
+      - name: Create ZIP
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          Compress-Archive `
+            -Path publish\* `
+            -DestinationPath artifacts\Copmuter-win-x64.zip `
+            -Force
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Copmuter-win-x64
+          path: artifacts\Copmuter-win-x64.zip
