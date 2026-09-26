@@ -4,6 +4,17 @@
 нативном окне (Windows: WebView2, Linux: GTK WebKit, macOS: WKWebView).
 Если pywebview не установлен — открывается браузер (приложение продолжает
 полностью работать).
+
+Прозрачность окна — настоящая, на уровне ОС (не имитация):
+  * create_window(transparent=True, frameless=True) — сквозь незанятые
+    пиксели страницы видно рабочий стол и другие приложения;
+  * страница не красит фон (html/body background: transparent);
+  * панели UI — полупрозрачное стекло (см. index.html) — «стекло»
+    смешивается с реальным содержимым за окном.
+Поддержка: Linux/macOS — с версии 3.3; Windows (WebView2) — с 3.6,
+полноценно (мышь/клавиатура) — с pywebview 6.0. Рекомендуется
+последний pywebview. Перетаскивание frameless-окна — за шапку
+(класс pywebview-drag-region).
 """
 from __future__ import annotations
 
