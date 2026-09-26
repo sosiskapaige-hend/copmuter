@@ -211,6 +211,7 @@ public sealed class ChatViewModel : ObservableObject
         var planOnly = Settings.PlanOnly || Settings.SafetyMode == "plan_only";
         Input = "";
         if (chat.Messages.Count == 0) chat.Title = text.Length > 48 ? text[..47] + "…" : text;
+        RebuildFilter();
         Add(chat, text, MessageRole.User);
         _runningChat = chat;
         _executing = true;
@@ -316,7 +317,7 @@ public sealed class ChatViewModel : ObservableObject
     {
         if (string.IsNullOrWhiteSpace(text)) return;
         chat.Messages.Add(new ChatMessage { Role = role, Text = text });
-        chat.Touch(); RaiseChatState(); RebuildFilter();
+        chat.Touch(); RaiseChatState();
     }
     private void RaiseChatState() { Raise(nameof(WelcomeVisibility)); }
 }

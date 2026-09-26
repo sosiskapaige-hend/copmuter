@@ -55,7 +55,7 @@
                         <TextBox Grid.Row="1" PlaceholderText="Найти задачу" CornerRadius="9" FontSize="13" Margin="4,0"
                                  AutomationProperties.Name="Поиск задач" Text="{x:Bind ViewModel.SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                         <ListView x:Name="ChatList" Grid.Row="2" ItemsSource="{x:Bind ViewModel.FilteredChats}"
-                                  SelectedItem="{x:Bind ViewModel.ActiveChat, Mode=TwoWay}" SelectionChanged="OnChatSelected"
+                                  SelectedItem="{x:Bind ViewModel.ActiveChat, Mode=OneWay}" IsItemClickEnabled="True" ItemClick="OnChatClicked"
                                   SelectionMode="Single" Background="Transparent" BorderThickness="0">
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="models:Chat">

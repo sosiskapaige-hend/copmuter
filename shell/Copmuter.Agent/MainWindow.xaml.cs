@@ -218,9 +218,9 @@ public sealed partial class MainWindow : Window
             button.Background = (string)button.Tag == ViewModel.Tab.ToString()
                 ? (Brush)Application.Current.Resources["AccentSoftBrush"] : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
     }
-    private void OnChatSelected(object sender, SelectionChangedEventArgs e)
+    private void OnChatClicked(object sender, ItemClickEventArgs e)
     {
-        if (e.AddedItems.Count > 0) ViewModel.Tab = AppTab.Chat;
+        if (e.ClickedItem is Chat chat) { ViewModel.ActiveChat = chat; ViewModel.Tab = AppTab.Chat; }
     }
     private async void OnDeleteChatClick(object sender, RoutedEventArgs e)
     {

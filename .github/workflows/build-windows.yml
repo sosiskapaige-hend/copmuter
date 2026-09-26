@@ -94,6 +94,10 @@ jobs:
           $log | Write-Output
           if ($code -ne 0) {
             $log | Where-Object { $_ -match 'error' } | Select-Object -First 15 | ForEach-Object { Write-Output "::error::$_" }
+            Get-ChildItem shell/Copmuter.Agent/obj -Recurse -Filter output.json | ForEach-Object {
+              $diagnostic = Get-Content $_.FullName -Raw
+              Write-Output ("::error title=XAML compiler diagnostics::" + ($diagnostic -replace "`r?`n", '%0A'))
+            }
             throw "Publish failed ($code)"
           }
 

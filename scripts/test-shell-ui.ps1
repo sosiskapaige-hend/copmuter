@@ -1,4 +1,4 @@
-# Run in Windows PowerShell (STA). Exercise the extracted WinUI app, not a mock.
+﻿# Run in Windows PowerShell (STA). Exercise the extracted WinUI app, not a mock.
 param([Parameter(Mandatory=$true)][int]$AppProcessId,
       [Parameter(Mandatory=$true)][string]$OutputDirectory)
 $ErrorActionPreference = 'Stop'
