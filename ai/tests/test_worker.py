@@ -366,6 +366,7 @@ class TestProtocol(unittest.TestCase):
 
 
 class TestServer(unittest.TestCase):
+    @unittest.skipUnless(hasattr(socket, "AF_UNIX"), "POSIX transport; Windows uses Named Pipes")
     def test_serve_handles_two_requests_on_one_channel(self) -> None:
         worker, _, tmp = make_worker([tool_call("open_url", {"url": "https://ya.ru"}),
                                       LLMReply(content="готово")])

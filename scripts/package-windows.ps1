@@ -16,7 +16,7 @@ Copy-Item docs/windows-portable.md (Join-Path $publish 'README.md')
 # own core uses /MT. Ship the redistributable x64 CRT app-local, not an installer.
 $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
 $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-$crt = Get-ChildItem "$vs/VC/Redist/MSVC/*/x64/Microsoft.VC143.CRT" -Directory |
+$crt = Get-Item "$vs/VC/Redist/MSVC/*/x64/Microsoft.VC143.CRT" |
     Sort-Object FullName -Descending | Select-Object -First 1
 if (!$crt) { throw 'MSVC x64 redistributable CRT directory not found' }
 Copy-Item "$($crt.FullName)/*.dll" $publish -Force
@@ -46,7 +46,7 @@ Expand-Archive 'artifacts/Copmuter-win-x64.zip' $unpacked -Force
 foreach ($file in $required) {
     if (!(Test-Path (Join-Path $unpacked $file))) { throw "Missing ZIP entry: $file" }
 }
-& "$unpacked/python/python.exe" -m ai.main --health --state-dir "$env:RUNNER_TEMP/copmuter-health"
+& "$unpacked/python/python.exe" -X utf8 -m ai.main --health --state-dir "$env:RUNNER_TEMP/copmuter-health"
 if ($LASTEXITCODE -ne 0) { throw 'Bundled Python health check failed' }
 & "$unpacked/python/python.exe" -c "import ctypes; ctypes.CDLL(r'$unpacked/AgentRuntime.dll')"
 if ($LASTEXITCODE -ne 0) { throw 'Native DLL load failed' }

@@ -56,7 +56,7 @@ jobs:
           $code = $LASTEXITCODE
           $log | Write-Output
           if ($code -ne 0) {
-            $log | Select-Object -Last 40 | ForEach-Object { Write-Output "::error::$_" }
+            Write-Output ("::error::" + (($log | Select-Object -Last 40) -join "%0A"))
             throw 'AI worker tests failed'
           }
 
