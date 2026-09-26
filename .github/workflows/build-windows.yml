@@ -48,12 +48,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'AI worker tests failed' }
 
       - name: Publish self-contained Windows x64 app
-        run: >-
-          dotnet publish shell/Copmuter.Agent/Copmuter.Agent.csproj
-          -c Release -r win-x64 --self-contained true
-          -p:WindowsAppSDKSelfContained=true -p:Platform=x64
-          -p:PublishSingleFile=false -p:PublishTrimmed=false
-          -o publish
+        run: |
+          $log = & dotnet publish shell/Copmuter.Agent/Copmuter.Agent.csproj `
+            -c Release -r win-x64 --self-contained true `
+            -p:WindowsAppSDKSelfContained=true -p:Platform=x64 `
+            -p:PublishSingleFile=false -p:PublishTrimmed=false -o publish 2>&1
+          $code = $LASTEXITCODE
+          $log | Write-Output
+          if ($code -ne 0) {
+            $log | Where-Object { $_ -match 'error' } | Select-Object -First 15 | ForEach-Object { Write-Output "::error::$_" }
+            throw "Publish failed ($code)"
+          }
 
       - name: Package portable runtime and smoke-test extracted ZIP
         run: ./scripts/package-windows.ps1
