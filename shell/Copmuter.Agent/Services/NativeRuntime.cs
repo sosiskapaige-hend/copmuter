@@ -2,6 +2,7 @@
 //
 // C# не делает низкоуровневых вызовов (Win32/SendInput/реестр) — всё это внутри
 // C++ рантайма. Оболочка только: инициализация, команды, события, метрики.
+using Copmuter.Agent.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -98,20 +99,20 @@ public sealed class NativeRuntime : IDisposable
 {
     private const string Dll = "AgentRuntime.dll";
 
-    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Utf8)]
-    private static extern int agent_init(string configJson);
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int agent_init([MarshalAs(UnmanagedType.LPUTF8Str)] string configJson);
 
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern void agent_shutdown();
 
-    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Utf8)]
-    private static extern IntPtr agent_execute(string phrase);
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr agent_execute([MarshalAs(UnmanagedType.LPUTF8Str)] string phrase);
 
-    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Utf8)]
-    private static extern IntPtr agent_preview(string phrase);
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr agent_preview([MarshalAs(UnmanagedType.LPUTF8Str)] string phrase);
 
-    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Utf8)]
-    private static extern IntPtr agent_run_tool(string tool, string argsJson);
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr agent_run_tool([MarshalAs(UnmanagedType.LPUTF8Str)] string tool, [MarshalAs(UnmanagedType.LPUTF8Str)] string argsJson);
 
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr agent_metrics_json();
@@ -119,7 +120,7 @@ public sealed class NativeRuntime : IDisposable
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr agent_state_json();
 
-    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Utf8)]
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern void agent_set_event_sink(AgentEventCallback callback, IntPtr userData);
 
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
@@ -131,6 +132,9 @@ public sealed class NativeRuntime : IDisposable
 
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern void agent_free(IntPtr ptr);
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr agent_run_task([MarshalAs(UnmanagedType.LPUTF8Str)] string task, int maxSteps);
 
     private AgentEventCallback? _callback;      // держим ссылку: GC не должен собрать делегат
     private bool _initialized;
@@ -202,6 +206,13 @@ public sealed class NativeRuntime : IDisposable
                 agent_free(ptr);
             }
         }
+    }
+
+    public NativeOutcome RunTask(string task)
+    {
+        EnsureStarted();
+        // Zero selects the native runtime's configured step limit.
+        return NativeOutcome.Parse(ReadAndFree(agent_run_task(task, 0)));
     }
 
     public string Preview(string phrase)

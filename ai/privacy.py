@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+from contextlib import closing
+
 import json
 import os
 import shutil
@@ -59,7 +61,7 @@ class PrivacyManager:
         if self.db_path.exists():
             inv.db_size_bytes = self.db_path.stat().st_size
             try:
-                with sqlite3.connect(self.db_path) as conn:
+                with closing(sqlite3.connect(self.db_path)) as conn, conn:
                     cur = conn.cursor()
                     cur.execute("SELECT COUNT(*) FROM chats")
                     inv.chats_count = cur.fetchone()[0]
@@ -83,7 +85,7 @@ class PrivacyManager:
             journal_db = self.undo_dir / "journal.db"
             if journal_db.exists():
                 try:
-                    with sqlite3.connect(journal_db) as conn:
+                    with closing(sqlite3.connect(journal_db)) as conn, conn:
                         cur = conn.cursor()
                         cur.execute("SELECT COUNT(*) FROM journal")
                         inv.undo_records_count = cur.fetchone()[0]
@@ -103,7 +105,7 @@ class PrivacyManager:
         }
 
         if self.db_path.exists():
-            with sqlite3.connect(self.db_path) as conn:
+            with closing(sqlite3.connect(self.db_path)) as conn, conn:
                 conn.row_factory = sqlite3.Row
                 cur = conn.cursor()
 
@@ -149,7 +151,7 @@ class PrivacyManager:
         purge_all = "all" in cat_set
 
         if self.db_path.exists():
-            with sqlite3.connect(self.db_path) as conn:
+            with closing(sqlite3.connect(self.db_path)) as conn, conn:
                 cur = conn.cursor()
                 if purge_all or "chats" in cat_set or "messages" in cat_set:
                     cur.execute("DELETE FROM messages")
@@ -186,7 +188,7 @@ class PrivacyManager:
         if not self.db_path.exists():
             return True, "База данных ещё не создана"
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with closing(sqlite3.connect(self.db_path)) as conn, conn:
                 cur = conn.cursor()
                 cur.execute("PRAGMA integrity_check")
                 row = cur.fetchone()
