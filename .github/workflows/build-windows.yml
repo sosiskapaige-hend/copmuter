@@ -12,6 +12,9 @@ jobs:
   build-windows:
     runs-on: windows-2022
     timeout-minutes: 30
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
     defaults:
       run:
         shell: pwsh
@@ -42,10 +45,20 @@ jobs:
 
       - name: Verify native ABI and Python worker
         run: |
-          python native/tools/check_exports.py native/build/AgentRuntime.dll native/include/agent/runtime.h
-          if ($LASTEXITCODE -ne 0) { throw 'Native ABI check failed' }
-          python -m unittest discover -s ai/tests -v
-          if ($LASTEXITCODE -ne 0) { throw 'AI worker tests failed' }
+          $log = & python native/tools/check_exports.py native/build/AgentRuntime.dll native/include/agent/runtime.h 2>&1
+          $code = $LASTEXITCODE
+          $log | Write-Output
+          if ($code -ne 0) {
+            $log | ForEach-Object { Write-Output "::error::$_" }
+            throw 'Native ABI check failed'
+          }
+          $log = & python -m unittest discover -s ai/tests -v 2>&1
+          $code = $LASTEXITCODE
+          $log | Write-Output
+          if ($code -ne 0) {
+            $log | Select-Object -Last 40 | ForEach-Object { Write-Output "::error::$_" }
+            throw 'AI worker tests failed'
+          }
 
       - name: Publish self-contained Windows x64 app
         run: |
@@ -61,7 +74,9 @@ jobs:
           }
 
       - name: Package portable runtime and smoke-test extracted ZIP
-        run: ./scripts/package-windows.ps1
+        run: |
+          try { ./scripts/package-windows.ps1 }
+          catch { Write-Output "::error::$_"; throw }
 
       - name: Upload ZIP
         uses: actions/upload-artifact@v4
