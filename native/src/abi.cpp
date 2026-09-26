@@ -8,6 +8,7 @@
 #include <string>
 
 #include "agent/platform.h"
+#define AGENT_RUNTIME_EXPORTS
 #include "agent/runtime.h"
 
 #ifdef _WIN32

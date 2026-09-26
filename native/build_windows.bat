@@ -34,7 +34,7 @@ set CORE=..\src\core_intent.cpp ..\src\core_intent_parse.cpp ..\src\core_registr
 set FLAGS=/nologo /std:c++20 /EHsc /utf-8 /W3 /MP /I..\include /DWIN32_LEAN_AND_MEAN /DNOMINMAX
 if /i "%CONFIG%"=="Release" set FLAGS=%FLAGS% /O2 /GL /MT /DNDEBUG
 if /i "%CONFIG%"=="Debug" set FLAGS=%FLAGS% /Od /Zi /MTd
-set LIBS=user32.lib gdi32.lib shell32.lib ole32.lib oleaut32.lib advapi32.lib shlwapi.lib psapi.lib dxgi.lib d3d11.lib uuid.lib version.lib winmm.lib
+set LIBS=user32.lib gdi32.lib shell32.lib ole32.lib oleaut32.lib advapi32.lib shlwapi.lib psapi.lib dxgi.lib d3d11.lib uuid.lib version.lib winmm.lib ws2_32.lib
 
 echo === AgentRuntime.dll ===
 cl %FLAGS% /LD %CORE% /Fe:AgentRuntime.dll /Foobj\core\ /Fdobj\core\compiler.pdb /link /INCREMENTAL:NO %LIBS%
