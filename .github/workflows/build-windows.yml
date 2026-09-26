@@ -3,7 +3,7 @@ name: Build Copmuter
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, 'arena/**']
 
 permissions:
   contents: read
