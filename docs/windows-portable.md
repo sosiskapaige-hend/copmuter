@@ -7,7 +7,18 @@ Windows 10 1809 or newer / Windows 11 x64 is required.
 
 The archive contains the WinUI 3 shell, AgentRuntime.dll, self-contained .NET 8
 and Windows App SDK 1.5 runtime, app-local Visual C++ runtime, CPython 3.11.9
-embedded x64 (including its license), and the complete `ai/` worker package.
+embedded x64 (including its license), the complete `ai/` worker package, the
+application icons (`assets/icon.ico`, `assets/icon.png`) and `build-info.json`
+with the commit SHA, ref, run id and build time. The status bar shows that SHA,
+so two ZIPs are never indistinguishable: every build carries its own commit.
+
+The WinUI shell is the **only** user interface that ships. Its appearance is
+defined once in `shell/Copmuter.Agent/App.xaml` (design tokens) and
+`MainWindow.xaml`; the window uses the OS system backdrop (acrylic) for real
+translucency and falls back to a solid dark background where the system does not
+support it. The legacy web UI (`agent/ui/...`) is not part of the artifact — a
+change made there is invisible to users, and the workflow emits a warning when a
+push touches it without touching `shell/`.
 No Visual Studio, MSVC, .NET SDK/runtime or system Python installation is needed.
 State/logs are created under `%LOCALAPPDATA%\Copmuter`, not shipped from the runner.
 Worker defaults live in `ai/config.py`; it does not consume the repository's

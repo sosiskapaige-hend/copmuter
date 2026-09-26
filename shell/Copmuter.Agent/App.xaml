@@ -1,13 +1,241 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Ресурсы приложения Copmuter.
+
+  ЗДЕСЬ ЖИВЁТ ЕДИНСТВЕННЫЙ ДИЗАЙН ПРИЛОЖЕНИЯ.
+
+  Значения токенов совпадают с теми, что были в легаси веб-интерфейсе
+  (agent/ui/web/static/index.html): бирюзовое стекло, полупрозрачные панели,
+  скругления 16/11, hairline-обводки. Только эта оболочка попадает в ZIP,
+  поэтому менять облик нужно здесь, а не в веб-папке.
+-->
 <Application
     x:Class="Copmuter.Agent.App"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    RequestedTheme="Dark">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- ==================== токены: шрифты ==================== -->
+            <FontFamily x:Key="AppFont">Segoe UI Variable Text, Segoe UI</FontFamily>
+            <FontFamily x:Key="MonoFont">Cascadia Mono, Cascadia Code, Consolas</FontFamily>
+
+            <!-- ==================== токены: цвет ==================== -->
+            <!-- Фон, когда стекло ОС недоступно (аналог html.solid в веб-UI). -->
+            <SolidColorBrush x:Key="SolidBackgroundBrush" Color="#0B1A20" />
+            <SolidColorBrush x:Key="AccentBrush" Color="#35DFCC" />
+            <SolidColorBrush x:Key="AccentInkBrush" Color="#032420" />
+            <SolidColorBrush x:Key="AccentSoftBrush" Color="#2935DFCC" />
+            <SolidColorBrush x:Key="AccentEdgeBrush" Color="#4D35DFCC" />
+            <SolidColorBrush x:Key="AccentStrongBrush" Color="#6135DFCC" />
+            <!-- Полупрозрачные панели: сквозь них видно то, что за окном. -->
+            <SolidColorBrush x:Key="PaneBrush" Color="#850A181E" />
+            <SolidColorBrush x:Key="Pane2Brush" Color="#9E0D1E25" />
+            <SolidColorBrush x:Key="Pane3Brush" Color="#B311252D" />
+            <SolidColorBrush x:Key="FillBrush" Color="#14FFFFFF" />
+            <SolidColorBrush x:Key="FillHoverBrush" Color="#21FFFFFF" />
+            <SolidColorBrush x:Key="HairlineBrush" Color="#1CFFFFFF" />
+            <SolidColorBrush x:Key="HairlineStrongBrush" Color="#33FFFFFF" />
+            <SolidColorBrush x:Key="TextBrush" Color="#F2FAF8" />
+            <SolidColorBrush x:Key="DimBrush" Color="#9EE2F4F1" />
+            <SolidColorBrush x:Key="FaintBrush" Color="#5CE2F4F1" />
+            <SolidColorBrush x:Key="OkBrush" Color="#4BE0A4" />
+            <SolidColorBrush x:Key="ErrBrush" Color="#FF7A8A" />
+            <SolidColorBrush x:Key="WarnBrush" Color="#F5C26B" />
+
+            <!-- ============ токены контролов (перекраска WinUI) ============ -->
+            <!-- Текстовые поля: стеклянная подложка вместо системной. -->
+            <SolidColorBrush x:Key="TextControlBackground" Color="#14FFFFFF" />
+            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#1FFFFFFF" />
+            <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#24FFFFFF" />
+            <SolidColorBrush x:Key="TextControlBackgroundDisabled" Color="#0DFFFFFF" />
+            <SolidColorBrush x:Key="TextControlBorderBrush" Color="#1CFFFFFF" />
+            <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#33FFFFFF" />
+            <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#8C35DFCC" />
+            <SolidColorBrush x:Key="TextControlBorderBrushDisabled" Color="#12FFFFFF" />
+            <SolidColorBrush x:Key="TextControlForeground" Color="#F2FAF8" />
+            <SolidColorBrush x:Key="TextControlForegroundPointerOver" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="TextControlForegroundFocused" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="TextControlForegroundDisabled" Color="#5CE2F4F1" />
+            <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="#5CE2F4F1" />
+            <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="#8CE2F4F1" />
+            <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="#8CE2F4F1" />
+            <SolidColorBrush x:Key="TextControlSelectionHighlightColor" Color="#6635DFCC" />
+            <!-- Выпадающие списки -->
+            <SolidColorBrush x:Key="ComboBoxBackground" Color="#14FFFFFF" />
+            <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#1FFFFFFF" />
+            <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#24FFFFFF" />
+            <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#1CFFFFFF" />
+            <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="#33FFFFFF" />
+            <SolidColorBrush x:Key="ComboBoxBorderBrushPressed" Color="#33FFFFFF" />
+            <SolidColorBrush x:Key="ComboBoxForeground" Color="#F2FAF8" />
+            <SolidColorBrush x:Key="ComboBoxForegroundPointerOver" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="ComboBoxForegroundPressed" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="#F20D1E25" />
+            <SolidColorBrush x:Key="ComboBoxDropDownBorderBrush" Color="#1CFFFFFF" />
+            <SolidColorBrush x:Key="ComboBoxDropDownForeground" Color="#F2FAF8" />
+            <SolidColorBrush x:Key="ComboBoxItemForeground" Color="#F2FAF8" />
+            <SolidColorBrush x:Key="ComboBoxItemForegroundSelected" Color="#F2FAF8" />
+            <SolidColorBrush x:Key="ComboBoxItemBackgroundSelected" Color="#2935DFCC" />
+            <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPointerOver" Color="#3D35DFCC" />
+            <!-- Переключатели: бирюзовый «включено» -->
+            <SolidColorBrush x:Key="ToggleSwitchFillOn" Color="#35DFCC" />
+            <SolidColorBrush x:Key="ToggleSwitchFillOnPointerOver" Color="#4BE7D6" />
+            <SolidColorBrush x:Key="ToggleSwitchFillOnPressed" Color="#2CC9B8" />
+            <SolidColorBrush x:Key="ToggleSwitchStrokeOn" Color="#35DFCC" />
+            <SolidColorBrush x:Key="ToggleSwitchStrokeOnPointerOver" Color="#4BE7D6" />
+            <SolidColorBrush x:Key="ToggleSwitchStrokeOnPressed" Color="#2CC9B8" />
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOn" Color="#032420" />
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOnPointerOver" Color="#032420" />
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOnPressed" Color="#032420" />
+            <SolidColorBrush x:Key="ToggleSwitchFillOff" Color="#14FFFFFF" />
+            <SolidColorBrush x:Key="ToggleSwitchFillOffPointerOver" Color="#1FFFFFFF" />
+            <SolidColorBrush x:Key="ToggleSwitchFillOffPressed" Color="#24FFFFFF" />
+            <SolidColorBrush x:Key="ToggleSwitchStrokeOff" Color="#33FFFFFF" />
+            <SolidColorBrush x:Key="ToggleSwitchStrokeOffPointerOver" Color="#4DFFFFFF" />
+            <SolidColorBrush x:Key="ToggleSwitchStrokeOffPressed" Color="#4DFFFFFF" />
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOff" Color="#9EE2F4F1" />
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOffPointerOver" Color="#F2FAF8" />
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOffPressed" Color="#F2FAF8" />
+            <SolidColorBrush x:Key="ToggleSwitchContentForeground" Color="#9EE2F4F1" />
+            <SolidColorBrush x:Key="ToggleSwitchContentForegroundOn" Color="#35DFCC" />
+            <SolidColorBrush x:Key="ToggleSwitchContentForegroundDisabled" Color="#5CE2F4F1" />
+            <!-- Кнопки по умолчанию: стекло, тусклая обводка -->
+            <SolidColorBrush x:Key="ButtonBackground" Color="#14FFFFFF" />
+            <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#1FFFFFFF" />
+            <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#28FFFFFF" />
+            <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="#0DFFFFFF" />
+            <SolidColorBrush x:Key="ButtonBorderBrush" Color="#1CFFFFFF" />
+            <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#33FFFFFF" />
+            <SolidColorBrush x:Key="ButtonForeground" Color="#F2FAF8" />
+            <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="#FFFFFF" />
+            <!-- Диалоги подтверждения -->
+            <SolidColorBrush x:Key="ContentDialogBackground" Color="#F50D1E25" />
+            <SolidColorBrush x:Key="ContentDialogBorderBrush" Color="#1CFFFFFF" />
+            <SolidColorBrush x:Key="ContentDialogForeground" Color="#F2FAF8" />
+            <SolidColorBrush x:Key="ContentDialogTopOverlay" Color="#00000000" />
+            <SolidColorBrush x:Key="ContentDialogSmokeFill" Color="#66050D10" />
+
+            <!-- ==================== шаблоны кнопок ==================== -->
+            <!-- Один шаблон на все кнопки: подложка + подсветка состояний, чтобы
+                 бирюзовая и красная кнопки не теряли цвет при наведении. -->
+            <ControlTemplate x:Key="PillButtonTemplate" TargetType="Button">
+                <Border x:Name="Root"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="{TemplateBinding CornerRadius}">
+                    <Grid>
+                        <Border x:Name="Overlay" Background="#FFFFFF" Opacity="0"
+                                CornerRadius="{TemplateBinding CornerRadius}" />
+                        <ContentPresenter x:Name="Body"
+                                          Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          Foreground="{TemplateBinding Foreground}"
+                                          Padding="{TemplateBinding Padding}"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+                    <VisualStateManager.VisualStateGroups>
+                        <VisualStateGroup x:Name="CommonStates">
+                            <VisualState x:Name="Normal" />
+                            <VisualState x:Name="PointerOver">
+                                <VisualState.Setters>
+                                    <Setter Target="Overlay.Opacity" Value="0.14" />
+                                </VisualState.Setters>
+                            </VisualState>
+                            <VisualState x:Name="Pressed">
+                                <VisualState.Setters>
+                                    <Setter Target="Overlay.Opacity" Value="0.24" />
+                                    <Setter Target="Root.Opacity" Value="0.92" />
+                                </VisualState.Setters>
+                            </VisualState>
+                            <VisualState x:Name="Disabled">
+                                <VisualState.Setters>
+                                    <Setter Target="Root.Opacity" Value="0.34" />
+                                </VisualState.Setters>
+                            </VisualState>
+                        </VisualStateGroup>
+                    </VisualStateManager.VisualStateGroups>
+                </Border>
+            </ControlTemplate>
+
+            <!-- ==================== стили ==================== -->
+            <!-- Шрифт всех подписей окна. Цвета задаются явно там, где текст выводится. -->
+            <Style TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource AppFont}" />
+            </Style>
+
+            <!-- Стеклянная карточка: панель настроек, блоки, сообщения. -->
+            <Style x:Key="CardBorderStyle" TargetType="Border">
+                <Setter Property="Background" Value="{StaticResource FillBrush}" />
+                <Setter Property="BorderBrush" Value="{StaticResource HairlineBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="12" />
+                <Setter Property="Padding" Value="14" />
+            </Style>
+
+            <Style x:Key="AccentPillButtonStyle" TargetType="Button">
+                <Setter Property="Template" Value="{StaticResource PillButtonTemplate}" />
+                <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+                <Setter Property="Foreground" Value="{StaticResource AccentInkBrush}" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="CornerRadius" Value="11" />
+                <Setter Property="Padding" Value="16,9" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="FontSize" Value="13" />
+            </Style>
+
+            <Style x:Key="DangerPillButtonStyle" TargetType="Button">
+                <Setter Property="Template" Value="{StaticResource PillButtonTemplate}" />
+                <Setter Property="Background" Value="#1FFF7A8A" />
+                <Setter Property="Foreground" Value="{StaticResource ErrBrush}" />
+                <Setter Property="BorderBrush" Value="#66FF7A8A" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="11" />
+                <Setter Property="Padding" Value="14,9" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="FontSize" Value="13" />
+            </Style>
+
+            <!-- Кнопка бокового рейла: квадрат 36×36 со скруглением 11. -->
+            <Style x:Key="RailButtonStyle" TargetType="Button">
+                <Setter Property="Template" Value="{StaticResource PillButtonTemplate}" />
+                <Setter Property="Width" Value="36" />
+                <Setter Property="Height" Value="36" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Foreground" Value="{StaticResource FaintBrush}" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="CornerRadius" Value="11" />
+            </Style>
+
+            <!-- Активная вкладка рейла: бирюзовая подложка и бирюзовая иконка. -->
+            <Style x:Key="RailButtonActiveStyle" TargetType="Button" BasedOn="{StaticResource RailButtonStyle}">
+                <Setter Property="Background" Value="{StaticResource AccentSoftBrush}" />
+                <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+            </Style>
+
+            <!-- Заголовок карточки: бирюзовая точка + подпись. -->
+            <Style x:Key="SectionTitleStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            </Style>
+
+            <Style x:Key="FieldLabelStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="11.5" />
+                <Setter Property="Foreground" Value="{StaticResource FaintBrush}" />
+                <Setter Property="Margin" Value="0,4,0,0" />
+            </Style>
+
+            <Style x:Key="HintStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="10.5" />
+                <Setter Property="Foreground" Value="{StaticResource FaintBrush}" />
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

@@ -21,6 +21,24 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Полная история: нужна, чтобы понять, какие каталоги изменил пуш.
+          fetch-depth: 0
+
+      - name: Warn when the design is edited in the shipment-invisible web UI
+        if: github.event_name == 'push'
+        continue-on-error: true
+        run: |
+          # Дизайн приложения живёт в shell/Copmuter.Agent (WinUI). Каталог agent/ui —
+          # легаси веб-интерфейс, он в ZIP не попадает: правки там никто не увидит.
+          $before = '${{ github.event.before }}'
+          if ($before -match '^0{40}$') { exit 0 }
+          $changed = git diff --name-only $before '${{ github.sha }}'
+          $web = @($changed | Where-Object { $_ -like 'agent/ui/*' })
+          $shell = @($changed | Where-Object { $_ -like 'shell/*' })
+          if ($web.Count -gt 0 -and $shell.Count -eq 0) {
+            Write-Output "::warning title=Дизайн правится не там::В коммите изменён agent/ui/ ($($web.Count) файл(ов)) — это легаси веб-интерфейс, в ZIP он не входит. Интерфейс приложения живёт в shell/Copmuter.Agent."
+          }
 
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
@@ -72,6 +90,21 @@ jobs:
             $log | Where-Object { $_ -match 'error' } | Select-Object -First 15 | ForEach-Object { Write-Output "::error::$_" }
             throw "Publish failed ($code)"
           }
+
+      - name: Stamp build identity into the package
+        run: |
+          # В поставку входят одни и те же бинарники, поэтому без отпечатка все ZIP
+          # выглядят одинаково и непонятно, какой коммит внутри. Строка состояния
+          # окна показывает этот SHA.
+          $info = [ordered]@{
+            sha       = '${{ github.sha }}'
+            ref       = '${{ github.ref_name }}'
+            run       = '${{ github.run_id }}'
+            event     = '${{ github.event_name }}'
+            built_utc = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+          }
+          $info | ConvertTo-Json | Set-Content publish/build-info.json -Encoding utf8
+          Get-Content publish/build-info.json
 
       - name: Package portable runtime and smoke-test extracted ZIP
         run: |

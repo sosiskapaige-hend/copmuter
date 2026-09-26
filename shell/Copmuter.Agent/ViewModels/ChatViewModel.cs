@@ -96,6 +96,9 @@ public sealed class ChatViewModel : ObservableObject
     public bool IsConnected => true;
     public string FastRoutingMs => "< 12 ms";
 
+    /// <summary>Пустой чат: показываем приветствие с подсказками вместо пустоты.</summary>
+    public bool ShowWelcome => Messages.Count == 0;
+
     public void Start()
     {
         try
@@ -246,6 +249,7 @@ public sealed class ChatViewModel : ObservableObject
             return;
         }
         Messages.Add(new ChatMessage { Role = role, Text = text });
+        Raise(nameof(ShowWelcome));
     }
 
     private void RefreshMetrics()

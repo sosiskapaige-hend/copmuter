@@ -20,11 +20,25 @@
     <EnableMsixTooling>true</EnableMsixTooling>
     <AssemblyName>Copmuter</AssemblyName>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <!-- Иконка приложения: та же, что у веб-версии (assets/icon.ico). -->
+    <ApplicationIcon>..\..\assets\icon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.5.240802000" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.22621.3233" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Иконки рядом с exe: окно берёт из них логотип и значок в панели задач. -->
+    <None Include="..\..\assets\icon.ico" Link="assets\icon.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+    <None Include="..\..\assets\icon.png" Link="assets\icon.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

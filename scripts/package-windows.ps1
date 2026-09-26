@@ -27,7 +27,8 @@ $required = @('Copmuter.exe', 'Copmuter.dll', 'Copmuter.runtimeconfig.json',
     'vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll',
     'python/python.exe', 'python/python311.dll', 'python/python311.zip',
     'python/python311._pth', 'python/LICENSE.txt', 'ai/main.py',
-    'ai/pipe_win.py', 'ai/security/__init__.py', 'ai/tools/__init__.py', 'start.bat')
+    'ai/pipe_win.py', 'ai/security/__init__.py', 'ai/tools/__init__.py', 'start.bat',
+    'build-info.json', 'assets/icon.ico', 'assets/icon.png')
 foreach ($file in $required) {
     if (!(Test-Path (Join-Path $publish $file))) { throw "Missing runtime file: $file" }
 }
