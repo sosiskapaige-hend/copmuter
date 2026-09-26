@@ -56,9 +56,17 @@ public sealed partial class MainWindow : Window
 
         try
         {
+            // Mica — сдержанная материя Windows 11: обои угадываются под тёмной
+            // подложкой, но не спорят с содержимым. Акрил — более «стеклянный»
+            // вариант, доступный с Windows 10 1809.
+            if (MicaController.IsSupported())
+            {
+                SystemBackdrop = new MicaBackdrop();
+                return;
+            }
+
             if (DesktopAcrylicController.IsSupported())
             {
-                // Акриловое стекло: сквозь панели видно рабочий стол и другие окна.
                 SystemBackdrop = new DesktopAcrylicBackdrop();
                 return;
             }

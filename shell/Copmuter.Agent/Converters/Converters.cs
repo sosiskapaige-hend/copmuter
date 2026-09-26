@@ -12,8 +12,8 @@ namespace Copmuter.Agent.Converters;
 
 public sealed class MessageBrushConverter : IValueConverter
 {
-    private static readonly SolidColorBrush User = new(Windows.UI.Color.FromArgb(0x24, 0x35, 0xDF, 0xCC));
-    private static readonly SolidColorBrush Agent = new(Windows.UI.Color.FromArgb(0x9E, 0x0D, 0x1E, 0x25));
+    private static readonly SolidColorBrush User = new(Windows.UI.Color.FromArgb(0x33, 0x35, 0xDF, 0xCC));
+    private static readonly SolidColorBrush Agent = new(Windows.UI.Color.FromArgb(0xD9, 0x0D, 0x1E, 0x25));
     private static readonly SolidColorBrush Status = new(Windows.UI.Color.FromArgb(0x0A, 0xFF, 0xFF, 0xFF));
     private static readonly SolidColorBrush Error = new(Windows.UI.Color.FromArgb(0x1F, 0xFF, 0x7A, 0x8A));
 
@@ -32,8 +32,8 @@ public sealed class MessageBrushConverter : IValueConverter
 
 public sealed class MessageEdgeConverter : IValueConverter
 {
-    private static readonly SolidColorBrush User = new(Windows.UI.Color.FromArgb(0x4D, 0x35, 0xDF, 0xCC));
-    private static readonly SolidColorBrush Agent = new(Windows.UI.Color.FromArgb(0x1C, 0xFF, 0xFF, 0xFF));
+    private static readonly SolidColorBrush User = new(Windows.UI.Color.FromArgb(0x5C, 0x35, 0xDF, 0xCC));
+    private static readonly SolidColorBrush Agent = new(Windows.UI.Color.FromArgb(0x24, 0xFF, 0xFF, 0xFF));
     private static readonly SolidColorBrush Status = new(Windows.UI.Color.FromArgb(0x12, 0xFF, 0xFF, 0xFF));
     private static readonly SolidColorBrush Error = new(Windows.UI.Color.FromArgb(0x66, 0xFF, 0x7A, 0x8A));
 

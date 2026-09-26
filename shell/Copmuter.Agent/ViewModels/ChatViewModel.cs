@@ -26,6 +26,8 @@ public sealed class ChatViewModel : ObservableObject
     private string _status = "Готов";
     private string _metrics = "";
     private bool _busy;
+    // Плотность подложки окна: 0.35 — фон заметно просвечивает, 1.0 — окно тёмное.
+    private double _glassOpacity = 0.72;
 
     public ChatViewModel(AgentSettings settings)
     {
@@ -96,6 +98,16 @@ public sealed class ChatViewModel : ObservableObject
     public bool CanStop => IsBusy;
     public bool IsConnected => true;
     public string FastRoutingMs => "< 12 ms";
+
+    /// <summary>
+    /// Плотность подложки поверх стекла ОС. Значение по умолчанию подобрано так,
+    /// чтобы обои не вымывали текст: фон лишь слегка угадывается, как вибрация macOS.
+    /// </summary>
+    public double GlassOpacity
+    {
+        get => _glassOpacity;
+        set => SetProperty(ref _glassOpacity, Math.Round(value, 2));
+    }
 
     /// <summary>
     /// Пустой чат: показываем приветствие с подсказками вместо пустоты.

@@ -32,17 +32,21 @@
             <SolidColorBrush x:Key="AccentSoftBrush" Color="#2935DFCC" />
             <SolidColorBrush x:Key="AccentEdgeBrush" Color="#4D35DFCC" />
             <SolidColorBrush x:Key="AccentStrongBrush" Color="#6135DFCC" />
-            <!-- Полупрозрачные панели: сквозь них видно то, что за окном. -->
-            <SolidColorBrush x:Key="PaneBrush" Color="#850A181E" />
-            <SolidColorBrush x:Key="Pane2Brush" Color="#9E0D1E25" />
-            <SolidColorBrush x:Key="Pane3Brush" Color="#B311252D" />
+            <!-- Тёмная подложка окна: гасит обои под стеклом, иначе акрил вымывает
+                 весь текст. Плотность настраивается ползунком в параметрах. -->
+            <SolidColorBrush x:Key="ScrimBrush" Color="#0B1A20" />
+            <!-- Панели: полупрозрачные, но плотные — фон лишь слегка просвечивает,
+                 как вибрация окон в macOS, а не как витраж. -->
+            <SolidColorBrush x:Key="PaneBrush" Color="#B80A181E" />
+            <SolidColorBrush x:Key="Pane2Brush" Color="#C40D1E25" />
+            <SolidColorBrush x:Key="Pane3Brush" Color="#D911252D" />
             <SolidColorBrush x:Key="FillBrush" Color="#14FFFFFF" />
             <SolidColorBrush x:Key="FillHoverBrush" Color="#21FFFFFF" />
             <SolidColorBrush x:Key="HairlineBrush" Color="#1CFFFFFF" />
             <SolidColorBrush x:Key="HairlineStrongBrush" Color="#33FFFFFF" />
             <SolidColorBrush x:Key="TextBrush" Color="#F2FAF8" />
-            <SolidColorBrush x:Key="DimBrush" Color="#9EE2F4F1" />
-            <SolidColorBrush x:Key="FaintBrush" Color="#5CE2F4F1" />
+            <SolidColorBrush x:Key="DimBrush" Color="#C2E2F4F1" />
+            <SolidColorBrush x:Key="FaintBrush" Color="#7AE2F4F1" />
             <SolidColorBrush x:Key="OkBrush" Color="#4BE0A4" />
             <SolidColorBrush x:Key="ErrBrush" Color="#FF7A8A" />
             <SolidColorBrush x:Key="WarnBrush" Color="#F5C26B" />

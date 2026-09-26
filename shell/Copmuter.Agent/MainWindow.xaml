@@ -25,6 +25,11 @@
             <conv:InvertBoolConverter x:Key="InvertBool" />
         </Grid.Resources>
 
+        <!-- Подложка окна: лежит на акриле и гасит фон до читаемого уровня.
+             Opacity = 1 полностью убирает просвечивание (ползунок в параметрах). -->
+        <Border Grid.RowSpan="3" Grid.ColumnSpan="3" Background="{StaticResource ScrimBrush}"
+                Opacity="{x:Bind ViewModel.GlassOpacity, Mode=OneWay}" />
+
         <Grid.RowDefinitions>
             <!-- 0: стеклянная шапка (она же область перетаскивания окна) -->
             <RowDefinition Height="Auto" />
@@ -46,7 +51,7 @@
         <!-- 0. ШАПКА: бренд, режим модели, переключатели, кнопки окна             -->
         <!-- ===================================================================== -->
         <Grid Grid.Row="0" Grid.ColumnSpan="3" Height="54">
-            <Border Background="{StaticResource PaneBrush}"
+            <Border Background="{StaticResource Pane3Brush}"
                     BorderBrush="{StaticResource HairlineBrush}" BorderThickness="0,0,0,1" />
 
             <!-- Область перетаскивания окна: лежит под элементами, клики по ним не съедает. -->
@@ -115,13 +120,13 @@
                     <FontIcon Glyph="&#xE8BD;" FontSize="16" Foreground="{StaticResource AccentBrush}" />
                 </Button>
                 <Button Style="{StaticResource RailButtonStyle}" ToolTipService.ToolTip="Диагностика системы">
-                    <FontIcon Glyph="&#xE9D9;" FontSize="16" Foreground="{StaticResource FaintBrush}" />
+                    <FontIcon Glyph="&#xE9D9;" FontSize="16" Foreground="{StaticResource DimBrush}" />
                 </Button>
                 <Button Style="{StaticResource RailButtonStyle}" ToolTipService.ToolTip="Центр конфиденциальности">
-                    <FontIcon Glyph="&#xE72E;" FontSize="16" Foreground="{StaticResource FaintBrush}" />
+                    <FontIcon Glyph="&#xE72E;" FontSize="16" Foreground="{StaticResource DimBrush}" />
                 </Button>
                 <Button Style="{StaticResource RailButtonStyle}" ToolTipService.ToolTip="Журнал действий и откат">
-                    <FontIcon Glyph="&#xE7A7;" FontSize="16" Foreground="{StaticResource FaintBrush}" />
+                    <FontIcon Glyph="&#xE7A7;" FontSize="16" Foreground="{StaticResource DimBrush}" />
                 </Button>
             </StackPanel>
         </Border>
@@ -129,7 +134,8 @@
         <!-- ===================================================================== -->
         <!-- 2. ЧАТ                                                                -->
         <!-- ===================================================================== -->
-        <Grid Grid.Row="1" Grid.Column="1" Padding="20,12,20,14">
+        <Grid Grid.Row="1" Grid.Column="1" Padding="20,12,20,14"
+              Background="{StaticResource PaneBrush}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
@@ -257,7 +263,7 @@
         <!-- ===================================================================== -->
         <!-- 3. ПАРАМЕТРЫ                                                          -->
         <!-- ===================================================================== -->
-        <ScrollViewer Grid.Row="1" Grid.Column="2" Width="360" Background="{StaticResource Pane2Brush}"
+        <ScrollViewer Grid.Row="1" Grid.Column="2" Width="360" Background="{StaticResource Pane3Brush}"
                       BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1,0,0,0" Padding="16,14"
                       Visibility="{Binding IsOn, ElementName=SettingsToggle, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
             <StackPanel Spacing="14">
@@ -312,6 +318,22 @@
                     </StackPanel>
                 </Border>
 
+                <!-- Группа: окно и стекло -->
+                <Border Style="{StaticResource CardBorderStyle}">
+                    <StackPanel Spacing="8">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Ellipse Width="6" Height="6" Fill="{StaticResource AccentBrush}" VerticalAlignment="Center" />
+                            <TextBlock Text="Окно и стекло" Style="{StaticResource SectionTitleStyle}" />
+                        </StackPanel>
+
+                        <TextBlock Text="Плотность подложки" Style="{StaticResource FieldLabelStyle}" />
+                        <Slider Minimum="0.35" Maximum="1" StepFrequency="0.05"
+                                Value="{x:Bind ViewModel.GlassOpacity, Mode=TwoWay}" />
+                        <TextBlock Text="0.35 — фон просвечивает сильнее · 1.0 — окно полностью тёмное"
+                                   Style="{StaticResource HintStyle}" />
+                    </StackPanel>
+                </Border>
+
                 <!-- Группа 3: таймауты -->
                 <Border Style="{StaticResource CardBorderStyle}">
                     <StackPanel Spacing="10">
@@ -352,7 +374,7 @@
         <!-- ===================================================================== -->
         <!-- 4. СТРОКА СОСТОЯНИЯ                                                   -->
         <!-- ===================================================================== -->
-        <Border Grid.Row="2" Grid.ColumnSpan="3" Background="{StaticResource PaneBrush}"
+        <Border Grid.Row="2" Grid.ColumnSpan="3" Background="{StaticResource Pane3Brush}"
                 BorderBrush="{StaticResource HairlineBrush}" BorderThickness="0,1,0,0" Padding="16,7">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -369,7 +391,7 @@
                 </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                    <TextBlock Text="Direct: ~11 µs" FontSize="11" Foreground="{StaticResource FaintBrush}" />
+                    <TextBlock Text="Direct: ~11 µs" FontSize="11" Foreground="{StaticResource DimBrush}" />
                     <!-- Отпечаток сборки: видно, какой именно коммит запущен. -->
                     <Border Background="{StaticResource AccentSoftBrush}" CornerRadius="6" Padding="6,1">
                         <TextBlock x:Name="BuildStamp" Text="сборка разработчика" FontSize="10.5"
