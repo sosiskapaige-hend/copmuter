@@ -23,6 +23,12 @@ public sealed class AgentSettings : INotifyPropertyChanged
     private int _maxRetries = 2;
     private int _confirmTimeoutMs = 30000;
     private bool _debugLog;
+    private bool _fastRouteDirect = true;
+    private bool _askDestructiveConfirmation = true;
+    private bool _enableVoiceFeedback;
+    private string _modelEndpoint = "http://127.0.0.1:1234/v1";
+    private string _visionModel = "qwen2-vl-7b-instruct";
+    private string _offlineLicenseKey = "COPMUTER-PRO-2026-PERMANENT-OFFLINE";
 
     public string StateDir { get => _stateDir; set => Set(ref _stateDir, value); }
     public string SocketPath { get => _socketPath; set => Set(ref _socketPath, value); }
@@ -42,6 +48,13 @@ public sealed class AgentSettings : INotifyPropertyChanged
     public int ConfirmTimeoutMs { get => _confirmTimeoutMs; set => Set(ref _confirmTimeoutMs, value); }
     /// <summary>Журнал отладки ядра: state_dir\agent_debug.log (для разбора проблем).</summary>
     public bool DebugLog { get => _debugLog; set => Set(ref _debugLog, value); }
+
+    public bool FastRouteDirect { get => _fastRouteDirect; set => Set(ref _fastRouteDirect, value); }
+    public bool AskDestructiveConfirmation { get => _askDestructiveConfirmation; set => Set(ref _askDestructiveConfirmation, value); }
+    public bool EnableVoiceFeedback { get => _enableVoiceFeedback; set => Set(ref _enableVoiceFeedback, value); }
+    public string ModelEndpoint { get => _modelEndpoint; set => Set(ref _modelEndpoint, value); }
+    public string VisionModel { get => _visionModel; set => Set(ref _visionModel, value); }
+    public string OfflineLicenseKey { get => _offlineLicenseKey; set => Set(ref _offlineLicenseKey, value); }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

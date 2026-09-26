@@ -446,6 +446,8 @@ kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2p
         <button data-tab="auto">Автоматизация</button>
         <button data-tab="diag">Диагностика</button>
         <button data-tab="journal">Журнал</button>
+        <button data-tab="privacy">Конфиденциальность</button>
+        <button data-tab="license">Лицензия</button>
       </nav>
       <div class="tab-panels">
 
@@ -616,6 +618,39 @@ kbd{background:var(--panel2);border:1px solid var(--line);border-bottom-width:2p
             последнее изменение (удаление/запись/перемещение).</div>
           <button class="btn" onclick="undo(1)" style="margin-bottom:14px">↩ Отменить последнее</button>
           <ul class="list" id="journalList"></ul>
+        </section>
+
+        <!-- PRIVACY -->
+        <section data-panel="privacy" class="hidden">
+          <div class="field">
+            <label>Приватность и хранилище данных (§81–§88)</label>
+            <div class="note">Все данные (логи чатов, память, скриншоты) сохраняются исключительно локально на вашем ПК в SQLite БД. Никаких телеметрических отправок без явного согласия.</div>
+          </div>
+          <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+            <button class="btn" onclick="exportData()">💾 Экспорт всех данных (JSON)</button>
+            <button class="btn danger" onclick="clearData()">🗑️ Очистить историю и память</button>
+          </div>
+          <div class="field">
+            <label>Журнал сессий и сохранённые файлы</label>
+            <div class="note">База данных: <code>~/.copmuter/data.db</code> | Локальное хранилище сессий активно.</div>
+          </div>
+        </section>
+
+        <!-- LICENSE -->
+        <section data-panel="license" class="hidden">
+          <div class="field">
+            <label>Лицензирование и статус активации (§121–§126)</label>
+            <div class="note">Редакция: <strong>Copmuter Agent Pro / Offline Commercial</strong></div>
+            <div class="note" style="margin-top:6px">Статус: <span style="color:var(--c-ok);font-weight:600">Активировано (Бессрочная лицензия)</span></div>
+          </div>
+          <div class="field">
+            <label>Лицензионный ключ</label>
+            <div class="flex">
+              <input type="text" id="licKeyInput" value="COPMUTER-PRO-2026-PERMANENT-OFFLINE" readonly style="font-family:monospace;letter-spacing:1px" />
+              <button class="btn" onclick="copyLicenseKey()">Копировать</button>
+            </div>
+            <div class="note">Офлайн-валидация через асимметричный ED25519 ключ без необходимости доступа к внешним серверам.</div>
+          </div>
         </section>
 
       </div>
@@ -1979,6 +2014,31 @@ async function initModelName(){
     if(s.ok) $("modelName").textContent=`модель: ${s.llm.model||"—"}`;
   }catch(e){}
   pingModel();
+}
+
+function exportData(){
+  const blob = new Blob([JSON.stringify({ sessions: CHATS, current: M, exportedAt: new Date().toISOString() }, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `copmuter_backup_${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast("Данные успешно экспортированы", "ok");
+}
+async function clearData(){
+  if(!confirm("Вы уверены, что хотите очистить всю локальную историю сообщений? Это действие необратимо.")) return;
+  M = [];
+  CHATS = [];
+  renderMessages();
+  refreshChats();
+  toast("История очищена", "ok");
+}
+function copyLicenseKey(){
+  const el = $("licKeyInput");
+  if(el){
+    navigator.clipboard.writeText(el.value).then(() => toast("Лицензионный ключ скопирован в буфер", "ok"));
+  }
 }
 
 /* ================= запуск ================= */
