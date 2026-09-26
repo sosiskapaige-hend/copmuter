@@ -91,10 +91,14 @@ jobs:
 
       - name: Publish self-contained Windows x64 app
         run: |
-          $log = & dotnet publish shell/Copmuter.Agent/Copmuter.Agent.csproj `
-            -c Release -r win-x64 --self-contained true `
-            -p:WindowsAppSDKSelfContained=true -p:Platform=x64 `
-            -p:PublishSingleFile=false -p:PublishTrimmed=false -o publish 2>&1
+          $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -property installationPath
+          $msbuild = Join-Path $vs 'MSBuild/Current/Bin/MSBuild.exe'
+          # Use the in-process .NET Framework XAML task for actionable diagnostics.
+          $log = & $msbuild shell/Copmuter.Agent/Copmuter.Agent.csproj /restore /t:Publish `
+            /p:Configuration=Release /p:RuntimeIdentifier=win-x64 /p:SelfContained=true `
+            /p:WindowsAppSDKSelfContained=true /p:Platform=x64 /p:UseXamlCompilerExecutable=false `
+            /p:PublishSingleFile=false /p:PublishTrimmed=false "/p:PublishDir=$PWD/publish/" /v:minimal 2>&1
           $code = $LASTEXITCODE
           $log | Write-Output
           if ($code -ne 0) {

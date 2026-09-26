@@ -15,7 +15,7 @@
             <RowDefinition Height="36" />
         </Grid.RowDefinitions>
         <Border Grid.RowSpan="3" Background="{StaticResource ScrimBrush}"
-                Opacity="{x:Bind ViewModel.GlassOpacity, Mode=OneWay}" IsHitTestVisible="False" />
+                Opacity="{Binding GlassOpacity, Mode=OneWay}" IsHitTestVisible="False" />
 
         <!-- Only this region is draggable. No interactive controls inside it. -->
         <Grid>
@@ -53,21 +53,21 @@
                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
                         <TextBlock Text="НЕДАВНИЕ" Foreground="{StaticResource FaintBrush}" FontSize="11" CharacterSpacing="120" Margin="14,0" />
                         <TextBox Grid.Row="1" PlaceholderText="Найти задачу" CornerRadius="9" FontSize="13" Margin="4,0"
-                                 AutomationProperties.Name="Поиск задач" Text="{x:Bind ViewModel.SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                        <ListView x:Name="ChatList" Grid.Row="2" ItemsSource="{x:Bind ViewModel.FilteredChats}"
-                                  SelectedItem="{x:Bind ViewModel.ActiveChat, Mode=OneWay}" IsItemClickEnabled="True" ItemClick="OnChatClicked"
+                                 AutomationProperties.Name="Поиск задач" Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <ListView x:Name="ChatList" Grid.Row="2" ItemsSource="{Binding FilteredChats}"
+                                  SelectedItem="{Binding ActiveChat, Mode=OneWay}" IsItemClickEnabled="True" ItemClick="OnChatClicked"
                                   SelectionMode="Single" Background="Transparent" BorderThickness="0">
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="models:Chat">
                                     <StackPanel Padding="0,9" Spacing="5">
-                                        <TextBlock Text="{x:Bind Title, Mode=OneWay}" FontSize="14" TextTrimming="CharacterEllipsis" MaxLines="1" />
-                                        <TextBlock Text="{x:Bind Subtitle, Mode=OneWay}" FontSize="12" Foreground="{StaticResource FaintBrush}" />
+                                        <TextBlock Text="{Binding Title, Mode=OneWay}" FontSize="14" TextTrimming="CharacterEllipsis" MaxLines="1" />
+                                        <TextBlock Text="{Binding Subtitle, Mode=OneWay}" FontSize="12" Foreground="{StaticResource FaintBrush}" />
                                     </StackPanel>
                                 </DataTemplate>
                             </ListView.ItemTemplate>
                         </ListView>
                         <TextBlock Grid.Row="2" Text="Ничего не найдено" FontSize="13" Margin="14,16" Foreground="{StaticResource FaintBrush}"
-                                   Visibility="{x:Bind ViewModel.EmptySearchVisibility, Mode=OneWay}" IsHitTestVisible="False" />
+                                   Visibility="{Binding EmptySearchVisibility, Mode=OneWay}" IsHitTestVisible="False" />
                     </Grid>
                     <Button x:Name="SettingsNav" Grid.Row="3" Tag="Settings" Click="OnNavigate" Style="{StaticResource NavButton}"
                             AutomationProperties.AutomationId="Settings" AutomationProperties.Name="Настройки" ToolTipService.ToolTip="Настройки">
@@ -76,32 +76,32 @@
                 </Grid>
             </Border>
 
-            <Grid Grid.Column="1" Margin="32,12,32,0" Visibility="{x:Bind ViewModel.ChatPanelVisibility, Mode=OneWay}">
+            <Grid Grid.Column="1" Margin="32,12,32,0" Visibility="{Binding ChatPanelVisibility, Mode=OneWay}">
                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                 <Grid ColumnSpacing="16" Margin="0,0,0,12">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                    <TextBlock Text="{x:Bind ViewModel.ActiveChat.Title, Mode=OneWay}" Foreground="{StaticResource DimBrush}" FontSize="14" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding ActiveChat.Title, Mode=OneWay}" Foreground="{StaticResource DimBrush}" FontSize="14" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
                     <Button Grid.Column="1" Content="&#xE74D;" FontFamily="Segoe Fluent Icons" Background="Transparent" BorderThickness="0"
                             Click="OnDeleteChatClick" ToolTipService.ToolTip="Удалить эту задачу" AutomationProperties.Name="Удалить задачу" />
                 </Grid>
                 <ScrollViewer x:Name="MessageScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                    <ItemsControl x:Name="MessageItems" ItemsSource="{x:Bind ViewModel.ActiveChat.Messages, Mode=OneWay}" MaxWidth="820" HorizontalAlignment="Stretch">
+                    <ItemsControl x:Name="MessageItems" ItemsSource="{Binding ActiveChat.Messages, Mode=OneWay}" MaxWidth="820" HorizontalAlignment="Stretch">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="models:ChatMessage">
                                 <Border Background="{Binding Role, Converter={StaticResource MessageBrush}}"
                                         HorizontalAlignment="{Binding Role, Converter={StaticResource MessageAlign}}"
                                         CornerRadius="16" Padding="22,18" Margin="0,8,0,12" MaxWidth="740">
                                     <StackPanel Spacing="10">
-                                        <TextBlock Text="{x:Bind Speaker}" Foreground="{StaticResource DimBrush}" FontSize="12" FontWeight="SemiBold" />
-                                        <TextBlock Text="{x:Bind Text, Mode=OneWay}" TextWrapping="Wrap" FontSize="16" LineHeight="26" IsTextSelectionEnabled="True" />
-                                        <TextBlock Text="{x:Bind Time}" Foreground="{StaticResource FaintBrush}" FontSize="11" HorizontalAlignment="Right" />
+                                        <TextBlock Text="{Binding Speaker}" Foreground="{StaticResource DimBrush}" FontSize="12" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding Text, Mode=OneWay}" TextWrapping="Wrap" FontSize="16" LineHeight="26" IsTextSelectionEnabled="True" />
+                                        <TextBlock Text="{Binding Time}" Foreground="{StaticResource FaintBrush}" FontSize="11" HorizontalAlignment="Right" />
                                     </StackPanel>
                                 </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </ScrollViewer>
-                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Visibility="{x:Bind ViewModel.WelcomeVisibility, Mode=OneWay}">
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Visibility="{Binding WelcomeVisibility, Mode=OneWay}">
                     <StackPanel MaxWidth="640" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,64,0,48" Spacing="24">
                         <StackPanel Spacing="14">
                             <TextBlock Text="ВАШ КОМПЬЮТЕР. ВАШИ ПРАВИЛА." FontSize="11" CharacterSpacing="140" Foreground="{StaticResource AccentBrush}" />
@@ -118,16 +118,16 @@
                 <StackPanel Grid.Row="2" MaxWidth="820" HorizontalAlignment="Stretch" Margin="0,16,0,12" Spacing="10">
                     <Border Background="{StaticResource SurfaceBrush}" CornerRadius="18" BorderBrush="{StaticResource HairlineBrush}" BorderThickness="1" Padding="16">
                         <StackPanel Spacing="14">
-                            <TextBox x:Name="InputBox" Text="{x:Bind ViewModel.Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            <TextBox x:Name="InputBox" Text="{Binding Input, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                      KeyDown="OnInputKeyDown" PlaceholderText="Что нужно сделать?" AcceptsReturn="True" TextWrapping="Wrap"
                                      MinHeight="48" MaxHeight="160" FontSize="16" Background="Transparent" BorderThickness="0" Padding="2,4"
                                      AutomationProperties.AutomationId="TaskInput" AutomationProperties.Name="Текст задачи" />
                             <Grid ColumnSpacing="12">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                <CheckBox AutomationProperties.AutomationId="PlanOnly" Content="Только план" IsChecked="{x:Bind ViewModel.Settings.PlanOnly, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" FontSize="13"
+                                <CheckBox AutomationProperties.AutomationId="PlanOnly" Content="Только план" IsChecked="{Binding Settings.PlanOnly, Mode=TwoWay}" IsEnabled="{Binding CanEdit, Mode=OneWay}" FontSize="13"
                                           ToolTipService.ToolTip="Показать план без выполнения действий" />
-                                <Button Grid.Column="1" Click="OnStopClick" IsEnabled="{x:Bind ViewModel.CanStop, Mode=OneWay}" Style="{StaticResource QuietButton}" Content="Стоп" AutomationProperties.AutomationId="Stop" />
-                                <Button Grid.Column="2" Click="OnSendClick" IsEnabled="{x:Bind ViewModel.CanSend, Mode=OneWay}" Style="{StaticResource PrimaryButton}" Content="Выполнить  ↑" AutomationProperties.AutomationId="Send" />
+                                <Button Grid.Column="1" Click="OnStopClick" IsEnabled="{Binding CanStop, Mode=OneWay}" Style="{StaticResource QuietButton}" Content="Стоп" AutomationProperties.AutomationId="Stop" />
+                                <Button Grid.Column="2" Click="OnSendClick" IsEnabled="{Binding CanSend, Mode=OneWay}" Style="{StaticResource PrimaryButton}" Content="Выполнить  ↑" AutomationProperties.AutomationId="Send" />
                             </Grid>
                         </StackPanel>
                     </Border>
@@ -135,23 +135,23 @@
                 </StackPanel>
             </Grid>
 
-            <ScrollViewer Grid.Column="1" Visibility="{x:Bind ViewModel.SettingsPanelVisibility, Mode=OneWay}">
+            <ScrollViewer Grid.Column="1" Visibility="{Binding SettingsPanelVisibility, Mode=OneWay}">
                 <StackPanel MaxWidth="720" Margin="32,28,32,40" Spacing="24">
                     <TextBlock Text="Настройки" Style="{StaticResource PageTitle}" />
                     <TextBlock Text="Соединение, безопасность и внешний вид. Изменения подключения применяются кнопкой внизу." Style="{StaticResource Muted}" />
                     <Border Style="{StaticResource SettingsGroup}">
-                        <StackPanel Spacing="18" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}">
+                        <StackPanel Spacing="18" IsEnabled="{Binding CanEdit, Mode=OneWay}">
                             <TextBlock Text="Подключение к модели" FontSize="18" FontWeight="SemiBold" />
-                            <TextBox Header="Адрес API" Text="{x:Bind ViewModel.Settings.ModelEndpoint, Mode=TwoWay}" CornerRadius="8" />
-                            <TextBox Header="Идентификатор модели" Text="{x:Bind ViewModel.Settings.VisionModel, Mode=TwoWay}" CornerRadius="8" />
+                            <TextBox Header="Адрес API" Text="{Binding Settings.ModelEndpoint, Mode=TwoWay}" CornerRadius="8" />
+                            <TextBox Header="Идентификатор модели" Text="{Binding Settings.VisionModel, Mode=TwoWay}" CornerRadius="8" />
                             <Grid ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                <StackPanel Spacing="5"><TextBlock Text="{x:Bind ViewModel.ModelTitle, Mode=OneWay}" TextWrapping="Wrap" /><TextBlock Text="{x:Bind ViewModel.ModelDetail, Mode=OneWay}" Style="{StaticResource Muted}" FontSize="12" /></StackPanel>
+                                <StackPanel Spacing="5"><TextBlock Text="{Binding ModelTitle, Mode=OneWay}" TextWrapping="Wrap" /><TextBlock Text="{Binding ModelDetail, Mode=OneWay}" Style="{StaticResource Muted}" FontSize="12" /></StackPanel>
                                 <Button Grid.Column="1" Click="OnCheckModelClick" Content="Проверить" Style="{StaticResource QuietButton}" />
                             </Grid>
                         </StackPanel>
                     </Border>
                     <Border Style="{StaticResource SettingsGroup}">
-                        <StackPanel Spacing="18" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}">
+                        <StackPanel Spacing="18" IsEnabled="{Binding CanEdit, Mode=OneWay}">
                             <TextBlock Text="Безопасность" FontSize="18" FontWeight="SemiBold" />
                             <ComboBox x:Name="SafetyModeBox" Header="Режим выполнения" HorizontalAlignment="Stretch" SelectionChanged="OnSafetyModeChanged">
                                 <ComboBoxItem Content="Авто — опасные действия с подтверждением" Tag="auto" />
@@ -159,46 +159,46 @@
                                 <ComboBoxItem Content="Только план — без выполнения" Tag="plan_only" />
                             </ComboBox>
                             <TextBlock Text="Отказ или закрытие диалога не разрешают действие. «Стоп» запрашивает отмену; уже завершённые действия не откатываются." Style="{StaticResource Muted}" />
-                            <ToggleSwitch Header="Журнал отладки ядра" IsOn="{x:Bind ViewModel.Settings.DebugLog, Mode=TwoWay}" OnContent="Записывать" OffContent="Не записывать" />
+                            <ToggleSwitch Header="Журнал отладки ядра" IsOn="{Binding Settings.DebugLog, Mode=TwoWay}" OnContent="Записывать" OffContent="Не записывать" />
                             <TextBlock Text="Журнал и история сохраняются локально. Журнал может содержать тексты задач и пути к файлам." Style="{StaticResource Muted}" FontSize="12" />
                         </StackPanel>
                     </Border>
                     <Border Style="{StaticResource SettingsGroup}">
                         <StackPanel Spacing="14">
                             <TextBlock Text="Тёмное стекло" FontSize="18" FontWeight="SemiBold" />
-                            <Slider AutomationProperties.AutomationId="GlassDensity" Header="Плотность подложки" Minimum="0.35" Maximum="1" StepFrequency="0.01" Value="{x:Bind ViewModel.GlassOpacity, Mode=TwoWay}" />
+                            <Slider AutomationProperties.AutomationId="GlassDensity" Header="Плотность подложки" Minimum="0.35" Maximum="1" StepFrequency="0.01" Value="{Binding GlassOpacity, Mode=TwoWay}" />
                             <TextBlock Text="Меньше — фон заметнее. Больше — выше контраст. Прозрачность рабочего стола доступна, если Windows поддерживает акрил и эффекты прозрачности включены." Style="{StaticResource Muted}" />
                         </StackPanel>
                     </Border>
-                    <Button Content="Сохранить и применить" Click="OnApplySettingsClick" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" Style="{StaticResource PrimaryButton}" />
+                    <Button Content="Сохранить и применить" Click="OnApplySettingsClick" IsEnabled="{Binding CanEdit, Mode=OneWay}" Style="{StaticResource PrimaryButton}" />
                 </StackPanel>
             </ScrollViewer>
 
-            <ScrollViewer Grid.Column="1" Visibility="{x:Bind ViewModel.DiagnosticsPanelVisibility, Mode=OneWay}">
+            <ScrollViewer Grid.Column="1" Visibility="{Binding DiagnosticsPanelVisibility, Mode=OneWay}">
                 <StackPanel Margin="32,28,32,40" Spacing="24" MaxWidth="820">
                     <TextBlock Text="Диагностика" Style="{StaticResource PageTitle}" />
                     <TextBlock Text="Фактические данные ядра. Во время выполнения обновление недоступно, чтобы не мешать задаче." Style="{StaticResource Muted}" />
-                    <Button AutomationProperties.AutomationId="RefreshDiagnostics" Content="Обновить данные" Click="OnRefreshDiagnosticsClick" IsEnabled="{x:Bind ViewModel.CanEdit, Mode=OneWay}" Style="{StaticResource QuietButton}" />
+                    <Button AutomationProperties.AutomationId="RefreshDiagnostics" Content="Обновить данные" Click="OnRefreshDiagnosticsClick" IsEnabled="{Binding CanEdit, Mode=OneWay}" Style="{StaticResource QuietButton}" />
                     <TextBlock Text="Метрики" FontSize="18" FontWeight="SemiBold" />
-                    <TextBlock Text="{x:Bind ViewModel.Metrics, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" FontSize="13" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    <TextBlock Text="{Binding Metrics, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" FontSize="13" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
                     <TextBlock Text="Доступные инструменты" FontSize="18" FontWeight="SemiBold" />
-                    <TextBlock Text="{x:Bind ViewModel.Tools, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" FontSize="13" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    <TextBlock Text="{Binding Tools, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" FontSize="13" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
                 </StackPanel>
             </ScrollViewer>
-            <Grid Grid.Column="1" Margin="32,28,32,24" RowSpacing="24" Visibility="{x:Bind ViewModel.JournalPanelVisibility, Mode=OneWay}">
+            <Grid Grid.Column="1" Margin="32,28,32,24" RowSpacing="24" Visibility="{Binding JournalPanelVisibility, Mode=OneWay}">
                 <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
                 <TextBlock Text="Журнал" Style="{StaticResource PageTitle}" />
                 <StackPanel Grid.Row="1" Spacing="16">
                     <TextBlock Text="Последние 100 строк журнала ядра. Запись включается в настройках." Style="{StaticResource Muted}" />
                     <StackPanel Orientation="Horizontal" Spacing="12"><Button AutomationProperties.AutomationId="RefreshJournal" Content="Обновить" Click="OnRefreshJournalClick" Style="{StaticResource QuietButton}" /><Button Content="Открыть папку" Click="OnOpenStateFolderClick" Style="{StaticResource QuietButton}" /></StackPanel>
                 </StackPanel>
-                <ScrollViewer Grid.Row="2"><TextBlock Text="{x:Bind ViewModel.Journal, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" FontSize="13" TextWrapping="Wrap" IsTextSelectionEnabled="True" /></ScrollViewer>
+                <ScrollViewer Grid.Row="2"><TextBlock Text="{Binding Journal, Mode=OneWay}" FontFamily="{StaticResource MonoFont}" FontSize="13" TextWrapping="Wrap" IsTextSelectionEnabled="True" /></ScrollViewer>
             </Grid>
         </Grid>
         <Grid Grid.Row="2" Margin="24,0" ColumnSpacing="16">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-            <TextBlock Text="{x:Bind ViewModel.Status, Mode=OneWay}" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource DimBrush}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind ViewModel.Status, Mode=OneWay}" />
-            <Ellipse Grid.Column="1" Width="6" Height="6" Fill="{x:Bind ViewModel.ModelDotBrush, Mode=OneWay}" ToolTipService.ToolTip="{x:Bind ViewModel.ModelTitle, Mode=OneWay}" />
+            <TextBlock Text="{Binding Status, Mode=OneWay}" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource DimBrush}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding Status, Mode=OneWay}" />
+            <Ellipse Grid.Column="1" Width="6" Height="6" Fill="{Binding ModelDotBrush, Mode=OneWay}" ToolTipService.ToolTip="{Binding ModelTitle, Mode=OneWay}" />
             <TextBlock x:Name="BuildStamp" Grid.Column="2" VerticalAlignment="Center" FontSize="11" Foreground="{StaticResource FaintBrush}" />
         </Grid>
     </Grid>

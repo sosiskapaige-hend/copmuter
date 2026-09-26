@@ -26,6 +26,7 @@ public sealed partial class MainWindow : Window
         var workspace = WorkspaceStore.Load(out var loadError);
         ViewModel = new ChatViewModel(workspace);
         InitializeComponent();
+        Root.DataContext = ViewModel;
         ConfigureGlassWindow();
         LoadBrandAssets();
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1280, 860));
