@@ -134,6 +134,10 @@ class WebUI:
                         return
                     self._send(200, data, "text/html; charset=utf-8")
                     return
+                m = re.fullmatch(r"/assets/(wallpaper\.(?:jpg|jpeg|png|webp))", p)
+                if m:
+                    self._send_asset(m.group(1))
+                    return
                 if p == "/api/chats":
                     self._json({"chats": rt.chats.store.list()})
                     return
@@ -448,6 +452,26 @@ class WebUI:
                                            "mime": mime or "application/octet-stream",
                                            "size": n, "is_image": is_image,
                                            "url": f"/api/files/{dest.name}"}})
+
+            def _send_asset(self, name: str) -> None:
+                """Отдаёт статический ассет приложения (обои) из assets/."""
+                import sys as _sys
+                candidates = []
+                try:
+                    meipass = getattr(_sys, "_MEIPASS", None)
+                    if meipass:
+                        candidates.append(Path(meipass) / "assets" / name)
+                except Exception:  # noqa: BLE001
+                    pass
+                candidates.append(Path(__file__).resolve().parents[3] / "assets" / name)
+                candidates.append(Path.cwd() / "assets" / name)
+                for path in candidates:
+                    if path.is_file():
+                        self._send(200, path.read_bytes(),
+                                   mimetypes.guess_type(name)[0] or "image/jpeg",
+                                   {"Cache-Control": "public, max-age=86400"})
+                        return
+                self._json({"error": "not found"}, 404)
 
             def _send_file(self, path: Path) -> None:
                 if not path.is_file():

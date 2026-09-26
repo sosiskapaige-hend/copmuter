@@ -46,6 +46,40 @@ def _dpi_aware() -> None:
             pass
 
 
+class _WindowApi:
+    """API окна для кнопок интерфейса (свернуть/закрыть)."""
+
+    def __init__(self) -> None:
+        self.window = None
+
+    def minimize(self) -> bool:
+        if self.window is not None:
+            self.window.minimize()
+            return True
+        return False
+
+    def maximize(self) -> bool:
+        if self.window is None:
+            return False
+        try:
+            if self.window.maximized:
+                self.window.restore()
+            else:
+                self.window.maximize()
+        except Exception:  # noqa: BLE001
+            try:
+                self.window.maximize()
+            except Exception:  # noqa: BLE001
+                return False
+        return True
+
+    def close(self) -> bool:
+        if self.window is not None:
+            self.window.destroy()
+            return True
+        return False
+
+
 def run_desktop(rt, headless: bool = False, width: int = 1340, height: int = 860,
                 title: str = "Copmuter") -> tuple:
     """Запускает UI. Возвращает (ui, url). В оконном режиме блокирует,
@@ -69,10 +103,27 @@ def run_desktop(rt, headless: bool = False, width: int = 1340, height: int = 860
         return ui, url
 
     _dpi_aware()
-    webview.create_window(
-        title, url, width=width, height=height,
-        min_size=(1024, 680), background_color="#051523",
+    api = _WindowApi()
+    # Прозрачное окно: интерфейс — стекло поверх рабочего стола.
+    # Если версия pywebview/платформа не поддерживает — обычное окно.
+    window = None
+    last_err: Exception | None = None
+    attempts = (
+        {"transparent": True, "js_api": api},
+        {"transparent": False, "js_api": api, "background_color": "#0A1A1F"},
+        {"background_color": "#0A1A1F"},
     )
+    for opts in attempts:
+        try:
+            window = webview.create_window(
+                title, url, width=width, height=height,
+                min_size=(1024, 680), **opts)
+            break
+        except TypeError as e:
+            last_err = e
+    if window is None:
+        raise last_err  # type: ignore[misc]
+    api.window = window
     # debug=False: стабильно; fullscreen=False
     webview.start()  # блокирует до закрытия окна
     return ui, url
