@@ -195,7 +195,35 @@ console.log("\n[4] Отправка сообщения не зависает (SS
   dom.window.close();
 }
 
-console.log("\n[5] Клик по всем кнопкам не бросает исключений");
+console.log("\n[5] «Стоп» до создания нового чата отменяет запрос после получения chat_id");
+{
+  let resolveSend;
+  let stoppedWith = null;
+  const sendDeferred = new Promise((res) => (resolveSend = res));
+  const fetch = makeFetch({
+    "/api/chat/send": async () => sendDeferred.then(() => ({
+      status: 200,
+      json: async () => ({ ok: true, chat_id: "c-stop", user: { id: "u-stop" }, title: "стоп" }),
+    })),
+    "/api/chat/stop": async (_path, opts) => {
+      stoppedWith = JSON.parse(opts.body || "{}").chat_id;
+      return { status: 200, json: async () => ({ ok: true }) };
+    },
+  });
+  const dom = buildDom({ fetch });
+  await flush();
+  const input = dom.window.document.getElementById("input");
+  input.value = "долгий запрос";
+  input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+  dom.window.document.getElementById("sendBtn").click();
+  dom.window.document.getElementById("stopBtn").click();
+  resolveSend();
+  await flush(120);
+  ok(stoppedWith === "c-stop", `стоп отправлен для нового чата (получено: ${stoppedWith})`);
+  dom.window.close();
+}
+
+console.log("\n[6] Клик по всем кнопкам не бросает исключений");
 {
   const dom = buildDom();
   await flush();
