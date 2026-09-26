@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Copmuter.Agent.Models;
 using Copmuter.Agent.Services;
+using Microsoft.UI.Dispatching;
 
 namespace Copmuter.Agent.ViewModels;
 
@@ -19,6 +20,7 @@ public sealed class ChatViewModel : ObservableObject
     private readonly WorkerProcess _worker;
     private readonly ConcurrentQueue<RuntimeEvent> _pending = new();
     private readonly Timer _uiPump;
+    private readonly DispatcherQueue _dispatcher = DispatcherQueue.GetForCurrentThread();
     private string _input = "";
     private string _status = "Готов";
     private string _metrics = "";
@@ -34,10 +36,10 @@ public sealed class ChatViewModel : ObservableObject
             SocketPath = settings.SocketPath,
             StateDir = settings.StateDir,
         });
-        _worker.LogReceived += (_, line) => Status = line;
+        _worker.LogReceived += (_, line) => _dispatcher.TryEnqueue(() => Status = line);
         _runtime.EventReceived += (_, ev) => _pending.Enqueue(ev);
         // События копятся в очереди и разбираются в UI-потоке: никаких кросспоточных правок.
-        _uiPump = new Timer(_ => Drain(), null, 60, 60);
+        _uiPump = new Timer(_ => _dispatcher.TryEnqueue(Drain), null, 60, 60);
     }
 
     public AgentSettings Settings { get; }
@@ -234,6 +236,11 @@ public sealed class ChatViewModel : ObservableObject
 
     private void Add(string text, MessageRole role)
     {
+        if (!_dispatcher.HasThreadAccess)
+        {
+            _dispatcher.TryEnqueue(() => Add(text, role));
+            return;
+        }
         if (string.IsNullOrWhiteSpace(text))
         {
             return;

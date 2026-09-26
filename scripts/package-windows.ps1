@@ -59,6 +59,12 @@ try {
         $_.ParentProcessId -eq $app.Id -and $_.Name -eq 'python.exe' -and $_.ExecutablePath -eq "$unpacked\python\python.exe"
     }
     if (!$worker) { throw 'Desktop did not start the bundled AI worker' }
+} catch {
+    # Preserve actionable diagnostics in annotations as well as runner logs.
+    $events = Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = (Get-Date).AddMinutes(-2) } -ErrorAction SilentlyContinue |
+        Where-Object { $_.Message -match 'Copmuter' } | Select-Object -First 3 -ExpandProperty Message
+    if ($events) { Write-Output ("::error::" + (($events -join "`n") -replace "`r?`n", '%0A')) }
+    throw
 } finally {
     if (!$app.HasExited) { & taskkill /PID $app.Id /T /F | Out-Null }
 }
