@@ -104,13 +104,17 @@ def run_desktop(rt, headless: bool = False, width: int = 1340, height: int = 860
 
     _dpi_aware()
     api = _WindowApi()
-    # Прозрачное окно: интерфейс — стекло поверх рабочего стола.
-    # Если версия pywebview/платформа не поддерживает — обычное окно.
+    # Прозрачное frameless-окно поверх рабочего стола: сквозь интерфейс
+    # видно другие окна. Перетаскивание — за шапку (pywebview-drag-region).
+    # Если версия pywebview/платформа не поддерживает — честный фолбэк.
     window = None
     last_err: Exception | None = None
     attempts = (
-        {"transparent": True, "js_api": api},
-        {"transparent": False, "js_api": api, "background_color": "#0A1A1F"},
+        {"transparent": True, "frameless": True, "easy_drag": False, "js_api": api},
+        {"frameless": True, "easy_drag": False, "js_api": api,
+         "background_color": "#0A1A1F"},
+        {"frameless": True, "js_api": api, "background_color": "#0A1A1F"},
+        {"js_api": api, "background_color": "#0A1A1F"},
         {"background_color": "#0A1A1F"},
     )
     for opts in attempts:

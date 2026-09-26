@@ -1,9 +1,8 @@
 <!DOCTYPE html>
-<html lang="ru" data-bg="wallpaper">
+<html lang="ru">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0A1A1F">
 <title>Copmuter</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%235EEAD4'/%3E%3Cstop offset='.55' stop-color='%232FE6C8'/%3E%3Cstop offset='1' stop-color='%2314B8A6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect x='2' y='2' width='60' height='60' rx='17' fill='url(%23g)'/%3E%3Ccircle cx='32' cy='33' r='11' fill='none' stroke='rgba(255,255,255,.9)' stroke-width='3'/%3E%3Ccircle cx='32' cy='33' r='4' fill='%23fff'/%3E%3Cellipse cx='32' cy='33' rx='17' ry='6.4' fill='none' stroke='rgba(255,255,255,.6)' stroke-width='2' transform='rotate(-24 32 33)'/%3E%3Ccircle cx='46' cy='21' r='2.2' fill='%23fff'/%3E%3C/svg%3E">
 <style>
@@ -13,15 +12,16 @@
    или обои. Прозрачность и размытие настраиваются. Без декора.
    ============================================================ */
 :root{
+  color-scheme:dark;
   --bg-solid:#0A1A1F;
   --tx:#EDF7F5; --dim:#92B7B3; --faint:#5E807E;
   --acc:#2FD8C4; --acc-soft:rgba(47,216,196,.14); --acc-ink:#042723;
   --ok:#39D98A; --err:#FF6B7F; --warn:#F2B84B;
   --hairline:rgba(146,222,214,.16); --hairline-strong:rgba(47,216,196,.36);
-  --pane-a:.74; --pane-blur:20px;
+  --pane-a:.55; --pane-blur:18px;
   --pane:rgba(9,24,29,var(--pane-a));
-  --pane-2:rgba(13,32,38,calc(var(--pane-a) + .06));
-  --pane-3:rgba(17,40,46,calc(var(--pane-a) + .12));
+  --pane-2:rgba(13,32,38,calc(var(--pane-a) + .08));
+  --pane-3:rgba(17,40,46,calc(var(--pane-a) + .14));
   --r:12px; --r-s:9px;
   --ease:cubic-bezier(.2,0,0,1);
   --font:"Segoe UI Variable Text","Segoe UI",Inter,system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
@@ -29,20 +29,13 @@
 }
 *{box-sizing:border-box}
 html,body{height:100%}
+/* окно прозрачное полностью: сквозь него видно другие окна и рабочий стол */
+html,body{background:transparent}
+html.solid,html.solid body{background:var(--bg-solid)}
 body{
   margin:0;color:var(--tx);font:14px/1.55 var(--font);
   overflow:hidden;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
-  background:var(--bg-solid);
 }
-/* за интерфейсом — реальная картинка: обои или рабочий стол */
-#wall{position:fixed;inset:0;z-index:0;background-size:cover;background-position:center}
-html[data-bg="wallpaper"] #wall{background-image:url("/assets/wallpaper.jpg")}
-html[data-bg="photo"] #wall{background-image:var(--wall-img,none)}
-html[data-bg="desktop"] #wall{background-image:var(--desk-img,none)}
-html[data-bg="solid"] #wall{background-image:none}
-/* настольное окно: настоящая сквозная прозрачность — виден рабочий стол ОС */
-html.shell-transparent #wall{display:none}
-html.shell-transparent,html.shell-transparent body{background:transparent}
 ::selection{background:rgba(47,216,196,.3)}
 ::-webkit-scrollbar{width:10px;height:10px}
 ::-webkit-scrollbar-thumb{background:rgba(146,222,214,.18);border-radius:8px;border:2.5px solid transparent;background-clip:padding-box}
@@ -566,14 +559,12 @@ body.is-desktop #collapseSide{display:none}
   </defs>
 </svg>
 
-<div id="wall"></div>
-
 <div class="app">
   <div class="backdrop" id="backdrop"></div>
 
   <!-- ===== САЙДБАР ===== -->
   <aside class="sidebar" id="sidebar">
-    <div class="sb-top">
+    <div class="sb-top pywebview-drag-region">
       <div class="brand">
         <div class="logo"><svg viewBox="0 0 48 48"><use href="#i-orb"/></svg></div>
         <b>Copmuter</b>
@@ -599,7 +590,7 @@ body.is-desktop #collapseSide{display:none}
 
   <!-- ===== ОСНОВНАЯ ОБЛАСТЬ ===== -->
   <main class="main">
-    <header class="topbar">
+    <header class="topbar pywebview-drag-region">
       <button class="icon-btn only-mobile" id="openSide" title="Чаты"><svg class="ic"><use href="#i-menu"/></svg></button>
       <div class="title-wrap">
         <div class="chat-title" id="chatTitle">Новый чат</div>
@@ -614,6 +605,7 @@ body.is-desktop #collapseSide{display:none}
         <button class="icon-btn" id="screenBtn" title="Экран агента"><svg class="ic"><use href="#i-eye"/></svg></button>
         <button class="btn danger hidden" id="stopBtn"><svg class="ic"><use href="#i-stop"/></svg>Остановить</button>
         <button class="icon-btn win-ctl" id="winMin" title="Свернуть"><svg class="ic"><use href="#i-min"/></svg></button>
+        <button class="icon-btn win-ctl" id="winMax" title="Развернуть"><svg class="ic"><use href="#i-max"/></svg></button>
         <button class="icon-btn win-ctl" id="winClose" title="Закрыть"><svg class="ic"><use href="#i-x"/></svg></button>
       </div>
     </header>
@@ -809,33 +801,21 @@ body.is-desktop #collapseSide{display:none}
         </section>
 
         <section data-panel="view">
-          <div class="sect-title">Фон под панелями</div>
-          <div class="presets" id="bgSeg">
-            <button class="preset" data-bg="desktop"><svg class="ic" style="width:13px;height:13px;display:inline-block;vertical-align:-2px;margin-right:5px"><use href="#i-display"/></svg>Рабочий стол (прозрачно)</button>
-            <button class="preset" data-bg="wallpaper">Обои</button>
-            <button class="preset" data-bg="photo">Своё фото</button>
-            <button class="preset" data-bg="solid">Сплошной</button>
-          </div>
-          <div class="note" style="margin-bottom:18px">«Рабочий стол» делает окно полностью прозрачным (в настольном приложении
-            сквозь интерфейс видно обои и окна). В браузере фон показывает обои или выбранное фото.</div>
-          <div class="fld" id="apPhotoRow">
-            <label>Фото для фона</label>
-            <div class="with-btn">
-              <input id="apPhotoName" readonly placeholder="файл не выбран">
-              <button class="btn" id="apPhotoBtn"><svg class="ic"><use href="#i-image"/></svg>Выбрать…</button>
-            </div>
-            <input type="file" id="apPhotoInput" accept="image/*" class="hidden">
-          </div>
+          <div class="sect-title">Фон окна</div>
+          <label class="chk"><input type="checkbox" id="apSolid"> Плотный фон (если прозрачность не нужна)</label>
+          <div class="note" style="margin:10px 0 18px">Окно прозрачное целиком: в настольном приложении сквозь него
+            видно рабочий стол и другие окна. Браузер не даёт окну альфа-прозрачность — там фон за стеклом
+            показывает сам браузер.</div>
           <div class="sect-title">Стекло</div>
           <div class="range-row">
             <span class="rr-label">Непрозрачность панелей</span>
-            <input type="range" id="apOpacity" min="35" max="95" step="1">
-            <span class="rr-val" id="apOpacityVal">74%</span>
+            <input type="range" id="apOpacity" min="25" max="95" step="1">
+            <span class="rr-val" id="apOpacityVal">55%</span>
           </div>
           <div class="range-row">
             <span class="rr-label">Размытие фона</span>
             <input type="range" id="apBlur" min="0" max="40" step="1">
-            <span class="rr-val" id="apBlurVal">20px</span>
+            <span class="rr-val" id="apBlurVal">18px</span>
           </div>
           <div class="dlg-foot-inner">
             <button class="btn primary" id="apSave"><svg class="ic"><use href="#i-check"/></svg>Сохранить</button>
@@ -2336,72 +2316,35 @@ async function initModelName() {
   pingModel();
 }
 
-/* ================= вид: прозрачность и фон ================= */
-const AP_DEFAULTS = { bg: "wallpaper", photo: "", opacity: 74, blur: 20 };
+/* ================= вид: прозрачность и стекло ================= */
+const AP_DEFAULTS = { opacity: 55, blur: 18, solid: false };
 function loadAppearance() {
   let p = {};
   try { p = JSON.parse(lsGet("aca.appearance", "{}")) || {}; } catch (e) {}
   return {
-    bg: ["desktop", "wallpaper", "photo", "solid"].includes(p.bg) ? p.bg : AP_DEFAULTS.bg,
-    photo: typeof p.photo === "string" ? p.photo : "",
     opacity: p.opacity != null ? +p.opacity : AP_DEFAULTS.opacity,
-    blur: p.blur != null ? +p.blur : AP_DEFAULTS.blur
+    blur: p.blur != null ? +p.blur : AP_DEFAULTS.blur,
+    solid: !!p.solid
   };
 }
 const AP = loadAppearance();
 function saveAppearance() { lsSet("aca.appearance", JSON.stringify(AP)); }
 function applyAppearance() {
   const root = document.documentElement;
-  root.dataset.bg = AP.bg;
-  root.classList.toggle("shell-transparent", AP.bg === "desktop" && !!window.__isDesktopShell);
+  root.classList.toggle("solid", AP.solid);
   root.style.setProperty("--pane-a", (AP.opacity / 100).toFixed(2));
   root.style.setProperty("--pane-blur", AP.blur + "px");
-  if (AP.photo) root.style.setProperty("--wall-img", `url("${AP.photo}")`);
-  document.querySelectorAll("#bgSeg .preset").forEach(b => b.classList.toggle("on", b.dataset.bg === AP.bg));
-  const op = $("apOpacity"), bl = $("apBlur");
+  const op = $("apOpacity"), bl = $("apBlur"), so = $("apSolid");
   if (op) op.value = AP.opacity;
   if (bl) bl.value = AP.blur;
+  if (so) so.checked = AP.solid;
   const opv = $("apOpacityVal"), blv = $("apBlurVal");
   if (opv) opv.textContent = AP.opacity + "%";
   if (blv) blv.textContent = AP.blur + "px";
 }
-async function refreshDesktopWall() {
-  // в браузере за стеклом — реальный рабочий стол (последний снимок агента)
-  if (document.documentElement.classList.contains("shell-transparent")) return;
-  if (AP.bg !== "desktop") return;
-  try {
-    const r = await fetch("/api/screen");
-    if (r.ok) {
-      const blob = await r.blob();
-      if (blob.size) {
-        const old = window.__deskUrl || "";
-        const url = URL.createObjectURL(blob);
-        document.documentElement.style.setProperty("--desk-img", `url("${url}")`);
-        window.__deskUrl = url;
-        if (old) { try { URL.revokeObjectURL(old); } catch (e) {} }
-      }
-    }
-  } catch (e) {}
-}
-$("bgSeg").addEventListener("click", e => {
-  const b = e.target.closest(".preset"); if (!b) return;
-  AP.bg = b.dataset.bg;
+$("apSolid").addEventListener("change", e => {
+  AP.solid = !!e.target.checked;
   applyAppearance(); saveAppearance();
-  if (AP.bg === "desktop") refreshDesktopWall();
-});
-$("apPhotoBtn").onclick = () => $("apPhotoInput").click();
-$("apPhotoInput").addEventListener("change", e => {
-  const f = e.target.files && e.target.files[0];
-  if (!f) return;
-  const rd = new FileReader();
-  rd.onload = () => {
-    AP.photo = String(rd.result || "");
-    AP.bg = "photo";
-    $("apPhotoName").value = f.name;
-    applyAppearance(); saveAppearance();
-  };
-  rd.readAsDataURL(f);
-  e.target.value = "";
 });
 $("apOpacity").addEventListener("input", e => { AP.opacity = +e.target.value; applyAppearance(); });
 $("apBlur").addEventListener("input", e => { AP.blur = +e.target.value; applyAppearance(); });
@@ -2410,8 +2353,7 @@ $("apSave").onclick = () => {
   showOverlay("settingsOverlay", false);
 };
 $("apReset").onclick = () => {
-  Object.assign(AP, AP_DEFAULTS, { photo: "" });
-  $("apPhotoName").value = "";
+  Object.assign(AP, AP_DEFAULTS);
   applyAppearance(); saveAppearance();
 };
 
@@ -2422,13 +2364,8 @@ function initWindowControls() {
   if (!apiObj) return;
   window.__isDesktopShell = true;
   document.body.classList.add("is-desktop");
-  // в настольном окне по умолчанию — прозрачное
-  try {
-    const raw = lsGet("aca.appearance", "");
-    if (!raw) { AP.bg = "desktop"; }
-  } catch (e) {}
-  applyAppearance();
   $("winMin").onclick = () => { try { apiObj.minimize(); } catch (e) {} };
+  $("winMax").onclick = () => { try { apiObj.maximize(); } catch (e) {} };
   $("winClose").onclick = () => { try { apiObj.close(); } catch (e) {} };
 }
 try { document.addEventListener("pywebviewready", initWindowControls); } catch (e) {}
@@ -2479,7 +2416,6 @@ bindHotkeys();
 updateHotkeyLabels();
 setMode(S.mode);
 applyAppearance();
-if (AP.bg === "desktop") refreshDesktopWall();
 initModelName();
 refreshChats();
 renderMessages();
@@ -2488,7 +2424,6 @@ autosize();
 renderAttachRow();
 setInterval(() => { if ($("settingsOverlay").classList.contains("show")) loadSys(); }, 8000);
 setInterval(() => { if ($("screenPanel").classList.contains("open") && S.generating) refreshScreen(); }, 3000);
-setInterval(() => { if (AP.bg === "desktop") refreshDesktopWall(); }, 5000);
 setTimeout(positionPill, 120);
 $("input").focus();
 
