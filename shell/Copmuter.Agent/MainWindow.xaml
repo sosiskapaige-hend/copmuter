@@ -140,26 +140,26 @@
                     <TextBlock Text="Настройки" Style="{StaticResource PageTitle}" />
                     <TextBlock Text="Соединение, безопасность и внешний вид. Изменения подключения применяются кнопкой внизу." Style="{StaticResource Muted}" />
                     <Border Style="{StaticResource SettingsGroup}">
-                        <StackPanel Spacing="18" IsEnabled="{Binding CanEdit, Mode=OneWay}">
+                        <StackPanel Spacing="18">
                             <TextBlock Text="Подключение к модели" FontSize="18" FontWeight="SemiBold" />
-                            <TextBox Header="Адрес API" Text="{Binding Settings.ModelEndpoint, Mode=TwoWay}" CornerRadius="8" />
-                            <TextBox Header="Идентификатор модели" Text="{Binding Settings.VisionModel, Mode=TwoWay}" CornerRadius="8" />
+                            <TextBox IsEnabled="{Binding CanEdit}" Header="Адрес API" Text="{Binding Settings.ModelEndpoint, Mode=TwoWay}" CornerRadius="8" />
+                            <TextBox IsEnabled="{Binding CanEdit}" Header="Идентификатор модели" Text="{Binding Settings.VisionModel, Mode=TwoWay}" CornerRadius="8" />
                             <Grid ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                 <StackPanel Spacing="5"><TextBlock Text="{Binding ModelTitle, Mode=OneWay}" TextWrapping="Wrap" /><TextBlock Text="{Binding ModelDetail, Mode=OneWay}" Style="{StaticResource Muted}" FontSize="12" /></StackPanel>
-                                <Button Grid.Column="1" Click="OnCheckModelClick" Content="Проверить" Style="{StaticResource QuietButton}" />
+                                <Button IsEnabled="{Binding CanEdit}" Grid.Column="1" Click="OnCheckModelClick" Content="Проверить" Style="{StaticResource QuietButton}" />
                             </Grid>
                         </StackPanel>
                     </Border>
                     <Border Style="{StaticResource SettingsGroup}">
-                        <StackPanel Spacing="18" IsEnabled="{Binding CanEdit, Mode=OneWay}">
+                        <StackPanel Spacing="18">
                             <TextBlock Text="Безопасность" FontSize="18" FontWeight="SemiBold" />
-                            <ComboBox x:Name="SafetyModeBox" Header="Режим выполнения" HorizontalAlignment="Stretch" SelectionChanged="OnSafetyModeChanged">
+                            <ComboBox IsEnabled="{Binding CanEdit}" x:Name="SafetyModeBox" Header="Режим выполнения" HorizontalAlignment="Stretch" SelectionChanged="OnSafetyModeChanged">
                                 <ComboBoxItem Content="Авто — опасные действия с подтверждением" Tag="auto" />
                                 <ComboBoxItem Content="Подтверждать изменения" Tag="confirm" />
                                 <ComboBoxItem Content="Только план — без выполнения" Tag="plan_only" />
                             </ComboBox>
                             <TextBlock Text="Отказ или закрытие диалога не разрешают действие. «Стоп» запрашивает отмену; уже завершённые действия не откатываются." Style="{StaticResource Muted}" />
-                            <ToggleSwitch Header="Журнал отладки ядра" IsOn="{Binding Settings.DebugLog, Mode=TwoWay}" OnContent="Записывать" OffContent="Не записывать" />
+                            <ToggleSwitch IsEnabled="{Binding CanEdit}" Header="Журнал отладки ядра" IsOn="{Binding Settings.DebugLog, Mode=TwoWay}" OnContent="Записывать" OffContent="Не записывать" />
                             <TextBlock Text="Журнал и история сохраняются локально. Журнал может содержать тексты задач и пути к файлам." Style="{StaticResource Muted}" FontSize="12" />
                         </StackPanel>
                     </Border>

@@ -26,7 +26,9 @@ Worker defaults live in `ai/config.py`; it does not consume the repository's
 
 For AI tasks, install/run LM Studio separately, load Qwen3-VL-8B-Instruct and enable
 its local server at `http://127.0.0.1:1234/v1`. Neither LM Studio nor model weights
-are included. `AGENT_LLM_URL`, `AGENT_LLM_MODEL`, `AGENT_LLM_KEY` can override defaults.
+are included. In the shell, set the API URL and model ID in Settings and click
+Save and apply; these values are passed to the worker as `AGENT_LLM_URL` and
+`AGENT_LLM_MODEL`. `AGENT_LLM_KEY` can be supplied through the environment.
 The core/worker can start without the model; model-dependent tasks cannot succeed.
 The optional Playwright/Chromium browser automation backend is not bundled;
 its existing graceful-unavailable behavior is unchanged. Native browser launching
@@ -36,7 +38,7 @@ WinUI application and is not silently installed into the artifact.
 
 ## Building and checks
 
-`.github/workflows/build-windows.yml`: manual dispatch or push to main on
+`.github/workflows/build-windows.yml`: manual dispatch or push to main / arena branches on
 windows-2022. Runner-only tools: VS 2022 MSVC x64 + Windows SDK, .NET 8 SDK,
 Python 3.11.9, PowerShell. NuGet restores the pinned Windows App SDK and Windows
 SDK BuildTools from the csproj. Publishing performs restore with the same RID
@@ -44,11 +46,15 @@ and self-contained properties as the build.
 
 `native/build_windows.bat` builds all four native targets in Release, with separate
 object/PDB directories, C++20, UTF-8 and static MSVC runtime. The workflow checks
-DLL exports, runs AI unit tests, verifies runtime files and .NET configuration,
+DLL exports and concurrent ABI controls, runs AI and shell model/service tests,
+verifies runtime files and .NET configuration,
 then extracts the ZIP to a relocated path containing spaces and checks Python
 health, native DLL loading and desktop/worker process startup without LM Studio.
-This is a startup smoke test, not a full interactive UI or real-model acceptance
+It also exercises the real window via UI Automation (new task, plan-only send,
+settings, glass slider, diagnostics and journal) and uploads screenshots as
+`Copmuter-ui-check`. This is not a real-model or desktop-transparency acceptance
 suite; the Windows runner itself has development runtimes installed.
+See [WinUI verification](winui-verification.md) in the repository for details.
 
 The root `start.bat` remains the development launcher. The ZIP gets a separate
 portable launcher that never builds anything. Native test/host EXEs are compiled
