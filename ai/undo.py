@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+from contextlib import closing
+
 import os
 import shutil
 import sqlite3
@@ -41,7 +43,7 @@ class TransactionJournal:
         self._init_db()
 
     def _init_db(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute("PRAGMA journal_mode=WAL;")
             conn.execute(
                 """
@@ -66,7 +68,7 @@ class TransactionJournal:
         desc = f"Создан {'каталог' if is_dir else 'файл'}: {p}"
         now_ms = int(time.time() * 1000)
 
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             cur = conn.cursor()
             cur.execute(
                 """
@@ -99,7 +101,7 @@ class TransactionJournal:
                 p.unlink()
 
         desc = f"Удалён объект: {p} (сохранён в корзине отката)"
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             cur = conn.cursor()
             cur.execute(
                 """
@@ -126,7 +128,7 @@ class TransactionJournal:
             return 0
 
         desc = f"Изменён файл: {p}"
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             cur = conn.cursor()
             cur.execute(
                 """
@@ -146,7 +148,7 @@ class TransactionJournal:
             params.append(task_id)
         query += "ORDER BY id DESC LIMIT 1"
 
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             cur = conn.cursor()
             cur.execute(query, params)
             row = cur.fetchone()
@@ -196,7 +198,7 @@ class TransactionJournal:
 
     def list_recent(self, limit: int = 20) -> list[dict[str, Any]]:
         """Возвращает недавние записи журнала."""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.row_factory = sqlite3.Row
             cur = conn.cursor()
             cur.execute(

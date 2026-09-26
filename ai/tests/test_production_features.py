@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+from contextlib import closing
+
 import os
 import tempfile
 import unittest
@@ -263,9 +265,8 @@ class TestSystemDiagnostics(unittest.TestCase):
 
 class TestPrivacyManager(unittest.TestCase):
     def test_inventory_and_purge(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory() as td, closing(Memory(Path(td) / "test.db")) as mem:
             db_path = Path(td) / "test.db"
-            mem = Memory(db_path)
             cid = mem.ensure_chat(None, "Чат")
             mem.add_message(cid, "user", "сообщение с паролем password = mypass123")
             mem.start_task("Задача", route="direct")

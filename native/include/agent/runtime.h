@@ -251,28 +251,34 @@ private:
 // ---------------------------------------------------------------------------
 //  C ABI для C# (P/Invoke) — минимальная поверхность, всё остальное через IPC.
 // ---------------------------------------------------------------------------
+// Export decoration must agree on declarations and definitions under MSVC.
+#if defined(_WIN32) && defined(AGENT_RUNTIME_EXPORTS)
+#define AGENT_API __declspec(dllexport)
+#else
+#define AGENT_API
+#endif
 extern "C" {
 // Возвращает 0 при успехе; иначе код ошибки (см. agent_last_error).
-int32_t agent_init(const char* config_json);
-void agent_shutdown();
+AGENT_API int32_t agent_init(const char* config_json);
+AGENT_API void agent_shutdown();
 // Выполнить фразу: возвращает JSON FastOutcome (память освобождать agent_free).
-char* agent_execute(const char* phrase);
-char* agent_preview(const char* phrase);
-char* agent_metrics_json();
-char* agent_state_json();
-char* agent_tools_json();
+AGENT_API char* agent_execute(const char* phrase);
+AGENT_API char* agent_preview(const char* phrase);
+AGENT_API char* agent_metrics_json();
+AGENT_API char* agent_state_json();
+AGENT_API char* agent_tools_json();
 // Исполнить один инструмент: args — JSON-объект, ответ — JSON-наблюдение.
-char* agent_run_tool(const char* tool, const char* args_json);
+AGENT_API char* agent_run_tool(const char* tool, const char* args_json);
 // Пройти задачу целиком: быстрые команды ядром, сложные — агентным циклом.
-char* agent_run_task(const char* task, int max_steps);
-const char* agent_last_error();
-void agent_free(char* ptr);
+AGENT_API char* agent_run_task(const char* task, int max_steps);
+AGENT_API const char* agent_last_error();
+AGENT_API void agent_free(char* ptr);
 // Подписка на события: callback вызывается из рабочих потоков (нужен C#-маршаллинг).
 typedef void (*agent_event_fn)(const char* event_json, void* user);
-void agent_set_event_sink(agent_event_fn fn, void* user);
+AGENT_API void agent_set_event_sink(agent_event_fn fn, void* user);
 // Ответ пользователя на «подтвердите опасное действие» (1 — да, 0 — нет).
-void agent_answer_confirmation(int32_t approved);
+AGENT_API void agent_answer_confirmation(int32_t approved);
 // Сколько миллисекунд рантайм ждёт ответа (0 — не ждать и не выполнять).
-void agent_set_confirm_timeout(int32_t timeout_ms);
-void agent_cancel_current();
+AGENT_API void agent_set_confirm_timeout(int32_t timeout_ms);
+AGENT_API void agent_cancel_current();
 }

@@ -149,7 +149,7 @@
 
                     <Button Grid.Column="1" Style="{StaticResource AccentButtonStyle}"
                             Click="OnSendClick"
-                            IsEnabled="{x:Bind ViewModel.IsBusy, Mode=OneWay, Converter={StaticResource InvertBool}}"
+                            IsEnabled="{x:Bind ViewModel.CanSend, Mode=OneWay}"
                             CornerRadius="10" Padding="16,9">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <FontIcon Glyph="&#xE724;" FontSize="13" />
@@ -174,7 +174,7 @@
         <!-- ================================================================= -->
         <ScrollViewer Grid.Row="1" Grid.Column="2" Width="360" Background="#081A2B"
                       BorderBrush="#14344D" BorderThickness="1,0,0,0" Padding="18,16"
-                      Visibility="{x:Bind SettingsToggle.IsOn, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+                      Visibility="{Binding IsOn, ElementName=SettingsToggle, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
             <StackPanel Spacing="16">
                 <TextBlock Text="Параметры агента" FontSize="16" FontWeight="Bold" Foreground="#DCF3FF" />
 

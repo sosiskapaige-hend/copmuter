@@ -15,6 +15,7 @@
 
 #ifdef _WIN32
 #include <windows.h>   // NOLINT
+#include <objidl.h>    // IStream/COM declarations omitted by WIN32_LEAN_AND_MEAN
 #include <gdiplus.h>   // NOLINT
 #pragma comment(lib, "gdiplus.lib")
 #endif

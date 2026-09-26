@@ -22,3 +22,7 @@ native/notes.txt
 # каталоги состояния, которые создают прогоны хозяина/тестов рядом с ядром
 native/agent_debug.log
 native/*smoke/
+
+# Windows CI packaging output
+publish/
+artifacts/

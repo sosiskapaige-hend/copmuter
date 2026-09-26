@@ -3,12 +3,21 @@ name: Build Copmuter
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [main, 'arena/**']
+
+permissions:
+  contents: read
 
 jobs:
   build-windows:
     runs-on: windows-2022
-
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+    defaults:
+      run:
+        shell: pwsh
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -18,45 +27,60 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Setup Python
+      - name: Setup Python (build checks only)
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.11.9'
+          architecture: x64
 
-      - name: Build C++ core
-        shell: cmd
-        run: native\build_windows.bat
-
-      - name: Restore .NET
-        run: dotnet restore shell\Copmuter.Agent\Copmuter.Agent.csproj
-
-      - name: Publish Windows app
-        run: >
-          dotnet publish shell\Copmuter.Agent\Copmuter.Agent.csproj
-          -c Release
-          -r win-x64
-          --self-contained true
-          --no-restore
-          -p:WindowsAppSDKSelfContained=true
-          -p:Platform=x64
-          -o publish
-
-      - name: Copy AI files
-        shell: pwsh
+      - name: Build C++20 Release core, host and tests
         run: |
-          Copy-Item -Recurse ai publish\ai
+          $log = & cmd /c native\build_windows.bat 2>&1
+          $code = $LASTEXITCODE
+          $log | Write-Output
+          if ($code -ne 0) {
+            $log | Where-Object { $_ -match 'error|fatal|LNK[0-9]+' } | Select-Object -First 15 | ForEach-Object { Write-Output "::error::$_" }
+            throw "Native build failed ($code)"
+          }
 
-      - name: Create ZIP
-        shell: pwsh
+      - name: Verify native ABI and Python worker
         run: |
-          New-Item -ItemType Directory -Force artifacts | Out-Null
-          Compress-Archive `
-            -Path publish\* `
-            -DestinationPath artifacts\Copmuter-win-x64.zip `
-            -Force
+          $log = & python native/tools/check_exports.py native/build/AgentRuntime.dll native/include/agent/runtime.h 2>&1
+          $code = $LASTEXITCODE
+          $log | Write-Output
+          if ($code -ne 0) {
+            $log | ForEach-Object { Write-Output "::error::$_" }
+            throw 'Native ABI check failed'
+          }
+          $log = & python -m unittest discover -s ai/tests -v 2>&1
+          $code = $LASTEXITCODE
+          $log | Write-Output
+          if ($code -ne 0) {
+            Write-Output ("::error::" + (($log | Select-Object -Last 40) -join "%0A"))
+            throw 'AI worker tests failed'
+          }
 
-      - name: Upload build
+      - name: Publish self-contained Windows x64 app
+        run: |
+          $log = & dotnet publish shell/Copmuter.Agent/Copmuter.Agent.csproj `
+            -c Release -r win-x64 --self-contained true `
+            -p:WindowsAppSDKSelfContained=true -p:Platform=x64 `
+            -p:PublishSingleFile=false -p:PublishTrimmed=false -o publish 2>&1
+          $code = $LASTEXITCODE
+          $log | Write-Output
+          if ($code -ne 0) {
+            $log | Where-Object { $_ -match 'error' } | Select-Object -First 15 | ForEach-Object { Write-Output "::error::$_" }
+            throw "Publish failed ($code)"
+          }
+
+      - name: Package portable runtime and smoke-test extracted ZIP
+        run: |
+          try { ./scripts/package-windows.ps1 }
+          catch { Write-Output "::error::$_"; throw }
+
+      - name: Upload ZIP
         uses: actions/upload-artifact@v4
         with:
           name: Copmuter-win-x64
-          path: artifacts\Copmuter-win-x64.zip
+          path: artifacts/Copmuter-win-x64.zip
+          if-no-files-found: error

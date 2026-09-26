@@ -29,10 +29,16 @@
 
   <ItemGroup>
     <!-- Нативное ядро и его зависимости кладём рядом с exe. -->
-    <None Include="..\..\native\build\AgentRuntime.dll" Condition="Exists('..\..\native\build\AgentRuntime.dll')">
+    <None Include="..\..\native\build\AgentRuntime.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       <Link>AgentRuntime.dll</Link>
     </None>
   </ItemGroup>
+
+  <Target Name="RequireNativeRuntime" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)\..\..\native\build\AgentRuntime.dll')"
+           Text="Build native/build_windows.bat before building or publishing the shell." />
+  </Target>
 
 </Project>

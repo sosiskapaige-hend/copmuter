@@ -3,6 +3,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Pipes;
 
 namespace Copmuter.Agent.Services;
 
@@ -48,7 +49,8 @@ public sealed class WorkerProcess : IDisposable
         var info = new ProcessStartInfo
         {
             FileName = _options.PythonPath,
-            Arguments = "-m ai.main --serve",
+            // Embedded Python ignores PYTHON* environment variables; set these explicitly.
+            Arguments = "-X utf8 -u -m ai.main --serve",
             WorkingDirectory = _options.RepoRoot,
             UseShellExecute = false,
             CreateNoWindow = true,
