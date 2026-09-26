@@ -120,7 +120,7 @@ class TestWebApi(unittest.IsolatedAsyncioTestCase):
     def test_index_page(self):
         with urllib.request.urlopen(self.base + "/", timeout=10) as r:
             html = r.read().decode()
-        self.assertIn("AI Computer Agent", html)
+        self.assertIn("Copmuter", html)
         self.assertTrue("Создай папку" in html or "Задача" in html)
 
     def test_settings_api(self):
@@ -165,6 +165,63 @@ class TestWebApi(unittest.IsolatedAsyncioTestCase):
             d = json.loads(e.read().decode())
             self.assertEqual(e.code, 503)
         self.assertFalse(d.get("ok", False) is True and "text" in d)
+
+    def test_stt_audio_graceful(self):
+        # запись из браузера: без faster-whisper — честный 503, не фейковый успех
+        req = urllib.request.Request(self.base + "/api/stt/audio",
+                                     data=b"\x1a\x45\xdf\xa3fake-webm-bytes",
+                                     headers={"Content-Type": "audio/webm",
+                                              "X-Audio-Lang": "ru"},
+                                     method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                d = json.loads(r.read().decode())
+        except urllib.error.HTTPError as e:
+            d = json.loads(e.read().decode())
+            self.assertEqual(e.code, 503)
+        self.assertFalse(d.get("ok"))
+        self.assertIn("error", d)
+
+    def test_stt_audio_empty_body(self):
+        req = urllib.request.Request(self.base + "/api/stt/audio",
+                                     data=b"",
+                                     headers={"Content-Type": "audio/webm"},
+                                     method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                d = json.loads(r.read().decode())
+                self.assertFalse(d.get("ok"))
+        except urllib.error.HTTPError as e:
+            d = json.loads(e.read().decode())
+            self.assertEqual(e.code, 400)
+
+    def test_stt_audio_pipeline(self):
+        # полный путь: аудио → временный файл → распознавание → текст
+        from unittest import mock
+        from agent.voice import Voice
+        calls = {}
+
+        def fake_transcribe(self, path, language=None):
+            calls["path"] = path
+            calls["language"] = language
+            from pathlib import Path
+            calls["exists"] = Path(path).exists()
+            return "привет мир"
+
+        with mock.patch.object(Voice, "stt_file_available", lambda self: True), \
+             mock.patch.object(Voice, "transcribe_file", fake_transcribe):
+            req = urllib.request.Request(self.base + "/api/stt/audio",
+                                         data=b"RIFFfakewav",
+                                         headers={"Content-Type": "audio/wav",
+                                                  "X-Audio-Lang": "ru"},
+                                         method="POST")
+            with urllib.request.urlopen(req, timeout=10) as r:
+                d = json.loads(r.read().decode())
+        self.assertTrue(d.get("ok"))
+        self.assertEqual(d.get("text"), "привет мир")
+        self.assertEqual(d.get("engine"), "whisper")
+        self.assertEqual(calls.get("language"), "ru")
+        self.assertTrue(calls.get("exists"), "временный аудиофайл должен существовать при распознавании")
 
     def test_sse_stream(self):
         # короткий SSE-запрос: читаем первые данные

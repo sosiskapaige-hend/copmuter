@@ -4,6 +4,17 @@
 нативном окне (Windows: WebView2, Linux: GTK WebKit, macOS: WKWebView).
 Если pywebview не установлен — открывается браузер (приложение продолжает
 полностью работать).
+
+Прозрачность окна — настоящая, на уровне ОС (не имитация):
+  * create_window(transparent=True, frameless=True) — сквозь незанятые
+    пиксели страницы видно рабочий стол и другие приложения;
+  * страница не красит фон (html/body background: transparent);
+  * панели UI — полупрозрачное стекло (см. index.html) — «стекло»
+    смешивается с реальным содержимым за окном.
+Поддержка: Linux/macOS — с версии 3.3; Windows (WebView2) — с 3.6,
+полноценно (мышь/клавиатура) — с pywebview 6.0. Рекомендуется
+последний pywebview. Перетаскивание frameless-окна — за шапку
+(класс pywebview-drag-region).
 """
 from __future__ import annotations
 
@@ -46,8 +57,42 @@ def _dpi_aware() -> None:
             pass
 
 
+class _WindowApi:
+    """API окна для кнопок интерфейса (свернуть/закрыть)."""
+
+    def __init__(self) -> None:
+        self.window = None
+
+    def minimize(self) -> bool:
+        if self.window is not None:
+            self.window.minimize()
+            return True
+        return False
+
+    def maximize(self) -> bool:
+        if self.window is None:
+            return False
+        try:
+            if self.window.maximized:
+                self.window.restore()
+            else:
+                self.window.maximize()
+        except Exception:  # noqa: BLE001
+            try:
+                self.window.maximize()
+            except Exception:  # noqa: BLE001
+                return False
+        return True
+
+    def close(self) -> bool:
+        if self.window is not None:
+            self.window.destroy()
+            return True
+        return False
+
+
 def run_desktop(rt, headless: bool = False, width: int = 1340, height: int = 860,
-                title: str = "AI Computer Agent") -> tuple:
+                title: str = "Copmuter") -> tuple:
     """Запускает UI. Возвращает (ui, url). В оконном режиме блокирует,
     пока окно открыто."""
     from .web import serve
@@ -69,10 +114,31 @@ def run_desktop(rt, headless: bool = False, width: int = 1340, height: int = 860
         return ui, url
 
     _dpi_aware()
-    webview.create_window(
-        title, url, width=width, height=height,
-        min_size=(1024, 680), background_color="#051523",
+    api = _WindowApi()
+    # Прозрачное frameless-окно поверх рабочего стола: сквозь интерфейс
+    # видно другие окна. Перетаскивание — за шапку (pywebview-drag-region).
+    # Если версия pywebview/платформа не поддерживает — честный фолбэк.
+    window = None
+    last_err: Exception | None = None
+    attempts = (
+        {"transparent": True, "frameless": True, "easy_drag": False, "js_api": api},
+        {"frameless": True, "easy_drag": False, "js_api": api,
+         "background_color": "#0A1A1F"},
+        {"frameless": True, "js_api": api, "background_color": "#0A1A1F"},
+        {"js_api": api, "background_color": "#0A1A1F"},
+        {"background_color": "#0A1A1F"},
     )
+    for opts in attempts:
+        try:
+            window = webview.create_window(
+                title, url, width=width, height=height,
+                min_size=(1024, 680), **opts)
+            break
+        except TypeError as e:
+            last_err = e
+    if window is None:
+        raise last_err  # type: ignore[misc]
+    api.window = window
     # debug=False: стабильно; fullscreen=False
     webview.start()  # блокирует до закрытия окна
     return ui, url

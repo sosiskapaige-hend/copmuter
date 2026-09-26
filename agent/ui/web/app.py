@@ -28,6 +28,7 @@
   GET  /api/journal           — журнал действий (undo)
   GET  /api/system            — CPU/RAM/диск
   POST /api/stt               — серверный STT (Whisper, опционально)
+  POST /api/stt/audio         — STT записанного аудио из браузера (raw body)
   GET  /api/selfcheck         — возможности агента (мышь/экран/окна/голос)
   POST /api/selfcheck/run     — самопроверка с реальными тестами
   POST /api/voice/settings    — обновить настройки голоса
@@ -189,6 +190,9 @@ class WebUI:
                 p = urllib.parse.unquote(self.path.split("?")[0])
                 if p == "/api/upload":
                     self._upload()   # читает raw-body сам
+                    return
+                if p == "/api/stt/audio":
+                    self._stt_audio()   # читает raw-body сам
                     return
                 b = self._body()
                 if p == "/api/chat/send":
@@ -356,6 +360,59 @@ class WebUI:
                 self._json({"error": "not found"}, 404)
 
             # ---------- обработчики ----------
+            def _stt_audio(self) -> None:
+                """Распознавание записанного в браузере аудио (MediaRecorder).
+
+                Тело запроса — сырые байты (webm/opus, ogg, wav, mp3, m4a);
+                язык — в заголовке X-Audio-Lang (опционально).
+                """
+                try:
+                    n = int(self.headers.get("Content-Length", 0))
+                except ValueError:
+                    n = 0
+                if n <= 0:
+                    self._json({"ok": False, "error": "пустая запись"}, 400)
+                    return
+                if n > UPLOAD_LIMIT:
+                    self._json({"ok": False, "error": "запись больше 25 МБ"}, 413)
+                    return
+                raw = self.rfile.read(n)
+                if len(raw) != n:
+                    self._json({"ok": False, "error": "аудио прочитано не полностью"}, 400)
+                    return
+                ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+                ext = {"audio/webm": ".webm", "audio/ogg": ".ogg", "audio/wav": ".wav",
+                       "audio/x-wav": ".wav", "audio/wave": ".wav", "audio/mpeg": ".mp3",
+                       "audio/mp3": ".mp3", "audio/mp4": ".m4a", "audio/x-m4a": ".m4a",
+                       "audio/aac": ".aac", "video/webm": ".webm"}.get(ctype, ".webm")
+                from ...voice import Voice
+                v = Voice(rt.cfg)
+                if not v.stt_file_available():
+                    self._json({"ok": False,
+                                "error": "серверный STT не установлен: "
+                                         "pip install faster-whisper numpy"}, 503)
+                    return
+                stt_dir = Path(rt.cfg.state_dir) / "stt"
+                stt_dir.mkdir(parents=True, exist_ok=True)
+                tmp = stt_dir / f"rec_{int(time.time() * 1000)}{ext}"
+                try:
+                    tmp.write_bytes(raw)
+                except OSError as e:
+                    self._json({"ok": False, "error": f"не удалось сохранить запись: {e}"}, 500)
+                    return
+                try:
+                    lang = (self.headers.get("X-Audio-Lang") or "").strip() or None
+                    text = v.transcribe_file(str(tmp), language=lang)
+                    self._json({"ok": True, "text": text, "engine": "whisper",
+                                "lang": lang or ""})
+                except Exception as e:  # noqa: BLE001
+                    self._json({"ok": False, "error": str(e)}, 503)
+                finally:
+                    try:
+                        tmp.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+
             def _upload(self) -> None:
                 try:
                     n = int(self.headers.get("Content-Length", 0))

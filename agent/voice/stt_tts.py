@@ -46,6 +46,14 @@ class Voice:
         except ImportError:
             return False
 
+    def stt_file_available(self) -> bool:
+        """Распознавание файла (без микрофона): достаточно faster-whisper."""
+        try:
+            import faster_whisper  # noqa: F401
+            return _HAS_NP
+        except ImportError:
+            return False
+
     def stt_reason(self) -> str:
         missing = []
         for mod in ("faster_whisper", "sounddevice"):
@@ -67,13 +75,18 @@ class Voice:
             self.cfg.voice.get("stt_model", "small"), device="cpu",
             compute_type="int8")
 
-    def transcribe_file(self, path: str) -> str:
-        if not self.stt_available():
-            raise RuntimeError("faster-whisper/sounddevice не установлены "
-                               "(pip install faster-whisper sounddevice)")
+    def transcribe_file(self, path: str, language: str | None = None) -> str:
+        """Распознаёт аудиофайл (wav/mp3/ogg/webm — что декодирует PyAV).
+
+        `language` — код языка («ru», «en»); None → из настроек,
+        пустая строка → автоопределение.
+        """
+        if not self.stt_file_available():
+            raise RuntimeError("faster-whisper не установлен "
+                               "(pip install faster-whisper numpy)")
         self._ensure()
-        segments, _ = self._model.transcribe(
-            path, language=self.cfg.voice.get("language", "ru"))
+        lang = self.cfg.voice.get("language", "ru") if language is None else (language or None)
+        segments, _ = self._model.transcribe(path, language=lang)
         return " ".join(s.text.strip() for s in segments)
 
     # ---------------- запись с VAD ----------------
