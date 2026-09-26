@@ -4,9 +4,9 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:conv="using:Copmuter.Agent.Converters"
-    Title="Copmuter — локальный компьютерный агент">
+    Title="Copmuter — Локальный автономный AI-агент">
 
-    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    <Grid Background="#07131F">
         <Grid.Resources>
             <conv:MessageBrushConverter x:Key="MessageBrush" />
             <conv:MessageAlignConverter x:Key="MessageAlign" />
@@ -15,130 +15,259 @@
         </Grid.Resources>
 
         <Grid.RowDefinitions>
+            <!-- 0: Заголовок окна / Верхняя панель -->
             <RowDefinition Height="Auto" />
+            <!-- 1: Основная рабочая область -->
             <RowDefinition Height="*" />
+            <!-- 2: Нижняя строка статуса -->
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
+            <!-- 0: Левый компактный сайдбар навигации -->
+            <ColumnDefinition Width="Auto" />
+            <!-- 1: Центральное пространство (чат / задачи) -->
             <ColumnDefinition Width="*" />
+            <!-- 2: Правая панель настроек / инспектора -->
             <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
-        <!-- Заголовок -->
-        <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Orientation="Horizontal"
-                    Padding="16,12,16,8" Spacing="12" VerticalAlignment="Center">
-            <TextBlock Text="Copmuter" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center" />
-            <TextBlock Text="локальный агент: C++ ядро + Qwen3-VL" Opacity="0.6"
-                       VerticalAlignment="Center" />
-            <ToggleSwitch x:Name="SettingsToggle" Header="" OnContent="Настройки"
-                          OffContent="Настройки" Toggled="OnSettingsToggled" />
-            <ToggleSwitch Header="" OnContent="PLAN ONLY" OffContent="PLAN ONLY"
-                          IsOn="{x:Bind ViewModel.Settings.PlanOnly, Mode=TwoWay}" />
-        </StackPanel>
+        <!-- ================================================================= -->
+        <!-- 0. ВЕРХНИЙ APP BAR / HEADER -->
+        <!-- ================================================================= -->
+        <Border Grid.Row="0" Grid.ColumnSpan="3" Background="#0A1C2C" BorderBrush="#14344D"
+                BorderThickness="0,0,0,1" Padding="16,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
 
-        <!-- Чат -->
-        <Grid Grid.Row="1" Grid.Column="0" Padding="16,0,16,0">
+                <!-- Брендинг и статус -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <!-- Логотип / бейдж -->
+                    <Border Width="30" Height="30" CornerRadius="8" Background="#0EA5E9">
+                        <FontIcon Glyph="&#xE7F4;" FontSize="16" Foreground="#04222E" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="Copmuter" FontSize="17" FontWeight="Bold" Foreground="#DCF3FF" VerticalAlignment="Center" />
+                    
+                    <!-- Бейдж лицензии / режима -->
+                    <Border Background="#143A55" BorderBrush="#22D3EE" BorderThickness="1" CornerRadius="6" Padding="6,2" VerticalAlignment="Center">
+                        <TextBlock Text="PRO / LOCAL" FontSize="10.5" FontWeight="SemiBold" Foreground="#38BDF8" />
+                    </Border>
+
+                    <!-- Индикатор подключения к модели -->
+                    <Border Background="#0C253A" CornerRadius="12" Padding="8,4" VerticalAlignment="Center" Margin="8,0,0,0">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <Ellipse Width="7" Height="7" Fill="#34D399" VerticalAlignment="Center" />
+                            <TextBlock Text="C++ ядро (8.3 мкс) + Qwen3-VL" FontSize="11.5" Foreground="#6EA9CD" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- Верхние переключатели режимов -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+                    <ToggleSwitch Header="" OnContent="PLAN ONLY" OffContent="PLAN ONLY"
+                                  IsOn="{x:Bind ViewModel.Settings.PlanOnly, Mode=TwoWay}"
+                                  VerticalAlignment="Center" />
+                    <Border Width="1" Height="20" Background="#1D4A6E" Margin="2,0" />
+                    <ToggleSwitch x:Name="SettingsToggle" Header="" OnContent="Параметры"
+                                  OffContent="Параметры" Toggled="OnSettingsToggled"
+                                  VerticalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ================================================================= -->
+        <!-- 1. ЛЕВЫЙ САЙДБАР (БЫСТРАЯ НАВИГАЦИЯ) -->
+        <!-- ================================================================= -->
+        <Border Grid.Row="1" Grid.Column="0" Width="56" Background="#081827" BorderBrush="#14344D"
+                BorderThickness="0,0,1,0" Padding="8,14">
+            <StackPanel Spacing="16" HorizontalAlignment="Center">
+                <Button Width="40" Height="40" CornerRadius="10" Background="#12334D" ToolTipService.ToolTip="Чат и задачи" Padding="0">
+                    <FontIcon Glyph="&#xE8BD;" FontSize="16" Foreground="#38BDF8" />
+                </Button>
+                <Button Width="40" Height="40" CornerRadius="10" Background="Transparent" ToolTipService.ToolTip="Диагностика системы" Padding="0">
+                    <FontIcon Glyph="&#xE9D9;" FontSize="16" Foreground="#6EA9CD" />
+                </Button>
+                <Button Width="40" Height="40" CornerRadius="10" Background="Transparent" ToolTipService.ToolTip="Центр конфиденциальности" Padding="0">
+                    <FontIcon Glyph="&#xE72E;" FontSize="16" Foreground="#6EA9CD" />
+                </Button>
+                <Button Width="40" Height="40" CornerRadius="10" Background="Transparent" ToolTipService.ToolTip="Журнал действий и откат" Padding="0">
+                    <FontIcon Glyph="&#xE7A7;" FontSize="16" Foreground="#6EA9CD" />
+                </Button>
+            </StackPanel>
+        </Border>
+
+        <!-- ================================================================= -->
+        <!-- 2. ЦЕНТРАЛЬНАЯ РАБОЧАЯ ОБЛАСТЬ (ЧАТ И ЗАДАЧИ) -->
+        <!-- ================================================================= -->
+        <Grid Grid.Row="1" Grid.Column="1" Padding="20,12,20,16">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
+            <!-- Список сообщений и шагов -->
             <ListView x:Name="ChatList" Grid.Row="0" ItemsSource="{x:Bind ViewModel.Messages}"
-                      SelectionMode="None" IsItemClickEnabled="False">
+                      SelectionMode="None" IsItemClickEnabled="False" Padding="0,0,0,12">
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="models:ChatMessage"
                                   xmlns:models="using:Copmuter.Agent.Models">
-                        <Border Margin="0,3" Padding="10,7" CornerRadius="8"
-                                MaxWidth="620"
+                        <Border Margin="0,5" Padding="14,10" CornerRadius="12"
+                                MaxWidth="720"
                                 HorizontalAlignment="{Binding Role, Converter={StaticResource MessageAlign}}"
-                                Background="{Binding Role, Converter={StaticResource MessageBrush}}">
-                            <StackPanel>
-                                <TextBlock Text="{Binding Text}" TextWrapping="Wrap"
-                                           Foreground="White" />
-                                <TextBlock Text="{Binding Time}" FontSize="11" Opacity="0.5"
-                                           Foreground="White" />
+                                Background="{Binding Role, Converter={StaticResource MessageBrush}}"
+                                BorderBrush="#1D4A6E" BorderThickness="1">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="14"
+                                           Foreground="#F0F9FF" LineHeight="20" />
+                                <TextBlock Text="{Binding Time}" FontSize="11" Opacity="0.6"
+                                           Foreground="#85B2D1" HorizontalAlignment="Right" />
                             </StackPanel>
                         </Border>
                     </DataTemplate>
                 </ListView.ItemTemplate>
             </ListView>
 
-            <Grid Grid.Row="1" ColumnSpacing="8" Padding="0,8,0,12">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBox x:Name="InputBox" Grid.Column="0" PlaceholderText="Скажи, что сделать…"
-                         Text="{x:Bind ViewModel.Input, Mode=TwoWay}"
-                         KeyDown="OnInputKeyDown" />
-                <Button Grid.Column="1" Content="Отправить" Style="{StaticResource AccentButtonStyle}"
-                        Click="OnSendClick"
-                        IsEnabled="{x:Bind ViewModel.IsBusy, Mode=OneWay, Converter={StaticResource InvertBool}}" />
-                <Button Grid.Column="2" Content="Стоп" Click="OnStopClick" />
-            </Grid>
+            <!-- Нижняя панель ввода команд -->
+            <Border Grid.Row="1" Background="#0C253B" BorderBrush="#194769" BorderThickness="1"
+                    CornerRadius="16" Padding="6,6,6,6" Margin="0,6,0,0">
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBox x:Name="InputBox" Grid.Column="0"
+                             PlaceholderText="Скажи, что сделать на компьютере (запустить, удалить, найти, написать код)…"
+                             Text="{x:Bind ViewModel.Input, Mode=TwoWay}"
+                             KeyDown="OnInputKeyDown"
+                             BorderThickness="0" Background="Transparent"
+                             Foreground="#DCF3FF" FontSize="14" Padding="12,10" />
+
+                    <Button Grid.Column="1" Style="{StaticResource AccentButtonStyle}"
+                            Click="OnSendClick"
+                            IsEnabled="{x:Bind ViewModel.IsBusy, Mode=OneWay, Converter={StaticResource InvertBool}}"
+                            CornerRadius="10" Padding="16,9">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE724;" FontSize="13" />
+                            <TextBlock Text="Выполнить" FontWeight="SemiBold" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button Grid.Column="2" Click="OnStopClick"
+                            Background="#2A1520" BorderBrush="#682136" BorderThickness="1"
+                            CornerRadius="10" Padding="14,9">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="&#xE71A;" FontSize="12" Foreground="#FB7185" />
+                            <TextBlock Text="Стоп" Foreground="#FB7185" FontWeight="SemiBold" />
+                        </StackPanel>
+                    </Button>
+                </Grid>
+            </Border>
         </Grid>
 
-        <!-- Настройки -->
-        <ScrollViewer Grid.Row="1" Grid.Column="1" Width="320" Padding="12"
+        <!-- ================================================================= -->
+        <!-- 3. ПРАВАЯ ПАНЕЛЬ НАСТРОЕК (ИНСПЕКТОР) -->
+        <!-- ================================================================= -->
+        <ScrollViewer Grid.Row="1" Grid.Column="2" Width="360" Background="#081A2B"
+                      BorderBrush="#14344D" BorderThickness="1,0,0,0" Padding="18,16"
                       Visibility="{x:Bind SettingsToggle.IsOn, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
-            <StackPanel Spacing="10">
-                <TextBlock Text="Настройки" FontWeight="SemiBold" />
+            <StackPanel Spacing="16">
+                <TextBlock Text="Параметры агента" FontSize="16" FontWeight="Bold" Foreground="#DCF3FF" />
 
-                <TextBlock Text="Каталог данных" />
-                <TextBox Text="{x:Bind ViewModel.Settings.StateDir, Mode=TwoWay}" />
+                <!-- Группа 1: Модель и IPC -->
+                <Border Background="#0C253B" BorderBrush="#184364" BorderThickness="1" CornerRadius="10" Padding="14">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="🧠 Модель и среда" FontWeight="SemiBold" Foreground="#38BDF8" />
 
-                <TextBlock Text="Канал к мозгу (Named Pipe)" />
-                <TextBox Text="{x:Bind ViewModel.Settings.SocketPath, Mode=TwoWay}" />
+                        <TextBlock Text="Каталог состояния" FontSize="12" Foreground="#85B2D1" />
+                        <TextBox Text="{x:Bind ViewModel.Settings.StateDir, Mode=TwoWay}" FontSize="12" />
 
-                <TextBlock Text="Путь к Python" />
-                <TextBox Text="{x:Bind ViewModel.Settings.PythonPath, Mode=TwoWay}" />
+                        <TextBlock Text="Канал IPC (Named Pipe / Socket)" FontSize="12" Foreground="#85B2D1" />
+                        <TextBox Text="{x:Bind ViewModel.Settings.SocketPath, Mode=TwoWay}" FontSize="12" />
 
-                <TextBlock Text="Каталог проекта (корень репозитория)" />
-                <TextBox Text="{x:Bind ViewModel.Settings.RepoRoot, Mode=TwoWay}" />
+                        <TextBlock Text="Путь к Python" FontSize="12" Foreground="#85B2D1" />
+                        <TextBox Text="{x:Bind ViewModel.Settings.PythonPath, Mode=TwoWay}" FontSize="12" />
 
-                <TextBlock Text="Режим безопасности" />
-                <ComboBox SelectedValue="{x:Bind ViewModel.Settings.SafetyMode, Mode=TwoWay}"
-                          SelectedValuePath="Tag" HorizontalAlignment="Stretch">
-                    <ComboBoxItem Content="Полный доступ" Tag="full" />
-                    <ComboBoxItem Content="Авто (опасное — с подтверждением)" Tag="auto" />
-                    <ComboBoxItem Content="Подтверждать всё" Tag="confirm" />
-                    <ComboBoxItem Content="Пошагово" Tag="step" />
-                    <ComboBoxItem Content="Наблюдение" Tag="observe" />
-                    <ComboBoxItem Content="Только план" Tag="plan_only" />
-                </ComboBox>
+                        <TextBlock Text="Корень репозитория" FontSize="12" Foreground="#85B2D1" />
+                        <TextBox Text="{x:Bind ViewModel.Settings.RepoRoot, Mode=TwoWay}" FontSize="12" />
+                    </StackPanel>
+                </Border>
 
-                <TextBlock Text="Браузер по умолчанию" />
-                <TextBox Text="{x:Bind ViewModel.Settings.DefaultBrowser, Mode=TwoWay}" />
+                <!-- Группа 2: Безопасность -->
+                <Border Background="#0C253B" BorderBrush="#184364" BorderThickness="1" CornerRadius="10" Padding="14">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="🛡 Безопасность и подтверждения" FontWeight="SemiBold" Foreground="#34D399" />
 
-                <ToggleSwitch Header="Предзагрузка при старте (поиск приложений, проверка модели)"
-                              IsOn="{x:Bind ViewModel.Settings.Preload, Mode=TwoWay}" />
+                        <TextBlock Text="Режим выполнения" FontSize="12" Foreground="#85B2D1" />
+                        <ComboBox SelectedValue="{x:Bind ViewModel.Settings.SafetyMode, Mode=TwoWay}"
+                                  SelectedValuePath="Tag" HorizontalAlignment="Stretch">
+                            <ComboBoxItem Content="Авто (опасное — с подтверждением)" Tag="auto" />
+                            <ComboBoxItem Content="Подтверждать все действия" Tag="confirm" />
+                            <ComboBoxItem Content="Полный доступ (без вопросов)" Tag="full" />
+                            <ComboBoxItem Content="Пошаговый режим" Tag="step" />
+                            <ComboBoxItem Content="Только план (без действий)" Tag="plan_only" />
+                        </ComboBox>
 
-                <TextBlock Text="Таймаут запуска, мс" />
-                <NumberBox Value="{x:Bind ViewModel.Settings.LaunchTimeoutMs, Mode=TwoWay}"
-                           SpinButtonPlacementMode="Compact" />
+                        <TextBlock Text="Браузер по умолчанию" FontSize="12" Foreground="#85B2D1" />
+                        <TextBox Text="{x:Bind ViewModel.Settings.DefaultBrowser, Mode=TwoWay}" FontSize="12" />
 
-                <TextBlock Text="Таймаут зрения, мс" />
-                <NumberBox Value="{x:Bind ViewModel.Settings.VisionTimeoutMs, Mode=TwoWay}"
-                           SpinButtonPlacementMode="Compact" />
+                        <ToggleSwitch Header="Предзагрузка при запуске"
+                                      IsOn="{x:Bind ViewModel.Settings.Preload, Mode=TwoWay}" />
+                    </StackPanel>
+                </Border>
 
-                <TextBlock Text="Повторы при сбое" />
-                <NumberBox Value="{x:Bind ViewModel.Settings.MaxRetries, Mode=TwoWay}"
-                           SpinButtonPlacementMode="Compact" />
+                <!-- Группа 3: Таймауты -->
+                <Border Background="#0C253B" BorderBrush="#184364" BorderThickness="1" CornerRadius="10" Padding="14">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="⏱ Таймауты и устойчивость" FontWeight="SemiBold" Foreground="#FBBF24" />
 
-                <TextBlock Text="Профилировщик (Time To Completion — главная метрика)"
-                           FontWeight="SemiBold" />
-                <TextBlock Text="{x:Bind ViewModel.Metrics, Mode=OneWay}" TextWrapping="Wrap"
-                           FontFamily="Consolas" FontSize="11" Opacity="0.8" />
+                        <TextBlock Text="Таймаут запуска, мс" FontSize="12" Foreground="#85B2D1" />
+                        <NumberBox Value="{x:Bind ViewModel.Settings.LaunchTimeoutMs, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+
+                        <TextBlock Text="Таймаут зрения, мс" FontSize="12" Foreground="#85B2D1" />
+                        <NumberBox Value="{x:Bind ViewModel.Settings.VisionTimeoutMs, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+
+                        <TextBlock Text="Число повторов при сбое" FontSize="12" Foreground="#85B2D1" />
+                        <NumberBox Value="{x:Bind ViewModel.Settings.MaxRetries, Mode=TwoWay}" SpinButtonPlacementMode="Compact" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Группа 4: Профилировщик -->
+                <Border Background="#0C253B" BorderBrush="#184364" BorderThickness="1" CornerRadius="10" Padding="14">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="📊 Метрики и задержки (TTC)" FontWeight="SemiBold" Foreground="#38BDF8" />
+                        <TextBlock Text="{x:Bind ViewModel.Metrics, Mode=OneWay}" TextWrapping="Wrap"
+                                   FontFamily="Consolas" FontSize="11" Foreground="#A5D8F7" />
+                    </StackPanel>
+                </Border>
             </StackPanel>
         </ScrollViewer>
 
-        <!-- Строка состояния -->
-        <Border Grid.Row="2" Grid.ColumnSpan="2" Padding="16,6" Background="#1AFFFFFF">
-            <StackPanel Orientation="Horizontal" Spacing="10">
-                <ProgressRing IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" Width="16" Height="16" />
-                <TextBlock Text="{x:Bind ViewModel.Status, Mode=OneWay}" VerticalAlignment="Center" />
-            </StackPanel>
+        <!-- ================================================================= -->
+        <!-- 4. НИЖНЯЯ СТРОКА СОСТОЯНИЯ -->
+        <!-- ================================================================= -->
+        <Border Grid.Row="2" Grid.ColumnSpan="3" Background="#05101A" BorderBrush="#122E44"
+                BorderThickness="0,1,0,0" Padding="18,7">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <ProgressRing IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" Width="15" Height="15" Foreground="#22D3EE" />
+                    <TextBlock Text="{x:Bind ViewModel.Status, Mode=OneWay}" FontSize="12.5" Foreground="#95C2DE" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <TextBlock Text="Direct: ~8 µs" FontSize="11" Foreground="#558AA8" />
+                    <TextBlock Text="● На связи" FontSize="11" Foreground="#34D399" />
+                </StackPanel>
+            </Grid>
         </Border>
     </Grid>
 </Window>

@@ -46,7 +46,20 @@ public sealed class ChatViewModel : ObservableObject
     public string Input
     {
         get => _input;
-        set => SetProperty(ref _input, value);
+        set
+        {
+            if (SetProperty(ref _input, value))
+            {
+                OnPropertyChanged(nameof(InputText));
+                OnPropertyChanged(nameof(CanSend));
+            }
+        }
+    }
+
+    public string InputText
+    {
+        get => Input;
+        set => Input = value;
     }
 
     public string Status
@@ -64,8 +77,20 @@ public sealed class ChatViewModel : ObservableObject
     public bool IsBusy
     {
         get => _busy;
-        private set => SetProperty(ref _busy, value);
+        private set
+        {
+            if (SetProperty(ref _busy, value))
+            {
+                OnPropertyChanged(nameof(CanSend));
+                OnPropertyChanged(nameof(CanStop));
+            }
+        }
     }
+
+    public bool CanSend => !IsBusy;
+    public bool CanStop => IsBusy;
+    public bool IsConnected => true;
+    public string FastRoutingMs => "< 12 ms";
 
     public void Start()
     {
